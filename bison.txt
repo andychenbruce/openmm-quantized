@@ -1,0 +1,5 @@
+100 proteins, saving every frame: /media/DATA_18_TB_2/data/daniel/openmm_2023.12.10
+878 proteins, saving every frame: /media/DATA_18_TB_1/daniel_s/openmm_2023.12.20
+501 proteins, saving every 10th frame: /media/DATA_18_TB_1/daniel_s/openmm_2023.12.25_N10
+99 proteins, saving every 100th frame: /media/DATA_18_TB_1/daniel_s/openmm_2023.12.26_N100
+30 proteins, saving every 1000th frame: /media/DATA_18_TB_1/daniel_s/openmm_2024.01.03_N1000
