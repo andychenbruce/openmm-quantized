@@ -65,6 +65,12 @@ namespace OpenMM {
  * thread is not used and calculations are performed on the main application thread.
  */
 
+  enum PrecisionLevel {
+    Single,
+    Double,
+    Mixed
+  };
+  
 class OPENMM_EXPORT_COMMON CudaContext : public ComputeContext {
 public:
     class WorkTask;
@@ -383,13 +389,13 @@ public:
      * Get whether double precision is being used.
      */
     bool getUseDoublePrecision() const {
-        return useDoublePrecision;
+      return (precision == PrecisionLevel::Double);
     }
     /**
      * Get whether mixed precision is being used.
      */
     bool getUseMixedPrecision() const {
-        return useMixedPrecision;
+      return (precision == PrecisionLevel::Mixed);
     }
     /**
      * Get whether the periodic box is triclinic.
@@ -441,35 +447,35 @@ public:
      * this context's precision.  This value is suitable for passing to kernels as an argument.
      */
     void* getPeriodicBoxSizePointer() {
-        return (useDoublePrecision ? reinterpret_cast<void*>(&periodicBoxSize) : reinterpret_cast<void*>(&periodicBoxSizeFloat));
+      return (getUseDoublePrecision() ? reinterpret_cast<void*>(&periodicBoxSize) : reinterpret_cast<void*>(&periodicBoxSizeFloat));
     }
     /**
      * Get a pointer to the inverse of the size of the periodic box, represented as either a float4 or double4 depending on
      * this context's precision.  This value is suitable for passing to kernels as an argument.
      */
     void* getInvPeriodicBoxSizePointer() {
-        return (useDoublePrecision ? reinterpret_cast<void*>(&invPeriodicBoxSize) : reinterpret_cast<void*>(&invPeriodicBoxSizeFloat));
+      return (getUseDoublePrecision() ? reinterpret_cast<void*>(&invPeriodicBoxSize) : reinterpret_cast<void*>(&invPeriodicBoxSizeFloat));
     }
     /**
      * Get a pointer to the first periodic box vector, represented as either a float4 or double4 depending on
      * this context's precision.  This value is suitable for passing to kernels as an argument.
      */
     void* getPeriodicBoxVecXPointer() {
-        return (useDoublePrecision ? reinterpret_cast<void*>(&periodicBoxVecX) : reinterpret_cast<void*>(&periodicBoxVecXFloat));
+      return (getUseDoublePrecision() ? reinterpret_cast<void*>(&periodicBoxVecX) : reinterpret_cast<void*>(&periodicBoxVecXFloat));
     }
     /**
      * Get a pointer to the second periodic box vector, represented as either a float4 or double4 depending on
      * this context's precision.  This value is suitable for passing to kernels as an argument.
      */
     void* getPeriodicBoxVecYPointer() {
-        return (useDoublePrecision ? reinterpret_cast<void*>(&periodicBoxVecY) : reinterpret_cast<void*>(&periodicBoxVecYFloat));
+      return (getUseDoublePrecision() ? reinterpret_cast<void*>(&periodicBoxVecY) : reinterpret_cast<void*>(&periodicBoxVecYFloat));
     }
     /**
      * Get a pointer to the third periodic box vector, represented as either a float4 or double4 depending on
      * this context's precision.  This value is suitable for passing to kernels as an argument.
      */
     void* getPeriodicBoxVecZPointer() {
-        return (useDoublePrecision ? reinterpret_cast<void*>(&periodicBoxVecZ) : reinterpret_cast<void*>(&periodicBoxVecZFloat));
+      return (getUseDoublePrecision() ? reinterpret_cast<void*>(&periodicBoxVecZ) : reinterpret_cast<void*>(&periodicBoxVecZFloat));
     }
     /**
      * Get the CudaIntegrationUtilities for this context.
@@ -563,7 +569,8 @@ private:
     int numAtomBlocks;
     int numThreadBlocks;
     int gpuArchitecture;
-    bool useBlockingSync, useDoublePrecision, useMixedPrecision, contextIsValid, boxIsTriclinic, hasAssignedPosqCharges;
+    PrecisionLevel precision;
+    bool useBlockingSync, contextIsValid, boxIsTriclinic, hasAssignedPosqCharges;
     bool isLinkedContext;
     std::string tempDir, cacheDir;
     float4 periodicBoxVecXFloat, periodicBoxVecYFloat, periodicBoxVecZFloat, periodicBoxSizeFloat, invPeriodicBoxSizeFloat;
