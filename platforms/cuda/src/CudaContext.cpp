@@ -28,6 +28,7 @@
   #define _USE_MATH_DEFINES // Needed to get M_PI
 #endif
 #include <cmath>
+#include <cuda_fp16.h>
 #include "CudaContext.h"
 #include "CudaArray.h"
 #include "CudaBondedUtilities.h"
@@ -75,6 +76,43 @@
         throw OpenMMException(m.str());\
     }
 
+std::string half_headers = R"AAA(
+/**
+ * To use half precision, we're supposed to include cuda_fp16.h.  Unfortunately,
+ * it isn't included in the search path automatically, and there's no reliable
+ * way to find where it's located on disk.  Instead we provide our own definitions
+ * for the few symbols we need.
+ */
+struct __align__(2) __half {
+    unsigned short x;
+};
+__device__ __half __float2half_ru(const float f) {
+    __half h;
+    asm("{cvt.rp.f16.f32 %0, %1;}" : "=h"(*reinterpret_cast<unsigned short *>(&h)) : "f"(f));
+    return h;
+}
+__device__ float __half2float(const __half h) {
+    float f;
+    asm("{cvt.f32.f16 %0, %1;}" : "=f"(f) : "h"(*reinterpret_cast<const unsigned short *>(&h)));
+    return f;
+}
+struct half3 {
+    __device__ half3(real3 f) {
+        // Round up so we'll err on the side of making the box a little too large.
+        // This ensures interactions will never be missed.
+        v[0] = __float2half_ru((float) f.x);
+        v[1] = __float2half_ru((float) f.y);
+        v[2] = __float2half_ru((float) f.z);
+    }
+    __device__ real3 toReal3() const {
+        return make_real3(__half2float(v[0]), __half2float(v[1]), __half2float(v[2]));
+    }
+private:
+    __half v[3];
+};
+)AAA";
+    
+
 using namespace OpenMM;
 using namespace std;
 
@@ -99,6 +137,8 @@ CudaContext::CudaContext(const System& system, int deviceIndex, bool useBlocking
     }
     else if (precision == "double") {
         this->precision = PrecisionLevel::Double;
+    } else if (precision == "f16") {
+        this->precision = PrecisionLevel::F16;
     }
     else
         throw OpenMMException("Illegal value for Precision: "+precision);
@@ -247,6 +287,17 @@ CudaContext::CudaContext(const System& system, int deviceIndex, bool useBlocking
       compilationDefines["make_mixed2"] = "make_float2";
       compilationDefines["make_mixed3"] = "make_float3";
       compilationDefines["make_mixed4"] = "make_float4";
+      break;
+    }
+    case PrecisionLevel::F16: {
+      posq.initialize<float4>(*this, paddedNumAtoms, "posq");
+      velm.initialize<float4>(*this, paddedNumAtoms, "velm");
+      compilationDefines["make_real2"] = "make_half2";
+      compilationDefines["make_real3"] = "make_half";
+      compilationDefines["make_real4"] = "make_half4";
+      compilationDefines["make_mixed2"] = "make_half2";
+      compilationDefines["make_mixed3"] = "make_half3";
+      compilationDefines["make_mixed4"] = "make_half4";
       break;
     }
     }
@@ -407,12 +458,18 @@ void CudaContext::initialize() {
                                   pinnedBufferSize * sizeof(double), 0));
       break;
     }
-
     case PrecisionLevel::Single: {
       energyBuffer.initialize<float>(*this, numEnergyBuffers, "energyBuffer");
       energySum.initialize<float>(*this, multiprocessors, "energySum");
       int pinnedBufferSize = max(paddedNumAtoms*6, numEnergyBuffers);
       CHECK_RESULT(cuMemHostAlloc(&pinnedBuffer, pinnedBufferSize*sizeof(float), 0));
+      break;
+    }
+    case PrecisionLevel::F16: {
+      energyBuffer.initialize<float>(*this, numEnergyBuffers, "energyBuffer");
+      energySum.initialize<float>(*this, multiprocessors, "energySum");
+      int pinnedBufferSize = max(paddedNumAtoms*6, numEnergyBuffers);
+      CHECK_RESULT(cuMemHostAlloc(&pinnedBuffer, pinnedBufferSize*sizeof(half), 0));
       break;
     }
     }
@@ -427,6 +484,13 @@ void CudaContext::initialize() {
       case PrecisionLevel::Single:
         ((float4 *)pinnedBuffer)[i] = make_float4(
 						  0.0f, 0.0f, 0.0f, mass == 0.0 ? 0.0f : (float)(1.0 / mass));
+        break;
+      case PrecisionLevel::F16:
+        half2 first(0.0f, 0.0f);
+        half2 second(0.0f, mass == 0.0 ? (half)0.0 : (half)(1.0 / mass));
+        ((half2 *)pinnedBuffer)[2 * i] = first;
+        ((half2 *)pinnedBuffer)[(2*i) + 1] = second;
+	
         break;
       }
     }
@@ -443,6 +507,9 @@ void CudaContext::initialize() {
         break;
       case PrecisionLevel::Single:
         energyParamDerivBuffer.initialize<float>(*this, numEnergyParamDerivs * numEnergyBuffers, "energyParamDerivBuffer");
+        break;
+      case PrecisionLevel::F16:
+        energyParamDerivBuffer.initialize<half>(*this, numEnergyParamDerivs * numEnergyBuffers, "energyParamDerivBuffer");
         break;
       }
         addAutoclearBuffer(energyParamDerivBuffer);
@@ -492,7 +559,6 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
     }
     if (!compilationDefines.empty())
         src << endl;
-
     switch (precision) {
       case PrecisionLevel::Double : {
 	src << "typedef double real;\n";
@@ -508,6 +574,14 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
         src << "typedef float2 real2;\n";
         src << "typedef float3 real3;\n";
         src << "typedef float4 real4;\n";
+        break;
+      }
+    case PrecisionLevel::F16:
+      {
+	src << "typedef half real;\n";
+        src << "typedef half2 real2;\n";
+        src << "typedef half3 real3;\n";
+        src << "typedef half4 real4;\n";
         break;
       }
     }
@@ -528,7 +602,17 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
       src << "typedef float4 mixed4;\n";
       break;
     }
+    case PrecisionLevel::F16: {
+      src << "typedef half mixed;\n";
+      src << "typedef half2 mixed2;\n";
+      src << "typedef half3 mixed3;\n";
+      src << "typedef half4 mixed4;\n";
+      break;
     }
+    }
+
+    src << half_headers << endl;
+
     src << "typedef unsigned int tileflags;\n";
     src << CudaKernelSources::common << endl;
     for (auto& pair : defines) {
@@ -609,7 +693,8 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
             nvrtcGetProgramLogSize(program, &logSize);
             vector<char> log(logSize);
             nvrtcGetProgramLog(program, &log[0]);
-            throw OpenMMException("Error compiling program: "+string(&log[0]));
+            printf("SRC = %s\n", src.str().c_str());
+            throw OpenMMException("BRUHBRUH 123 Error compiling program: "+string(&log[0]));
         }
         size_t ptxSize;
         nvrtcGetPTXSize(program, &ptxSize);

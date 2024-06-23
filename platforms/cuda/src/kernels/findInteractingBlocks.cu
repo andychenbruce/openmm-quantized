@@ -2,40 +2,6 @@
 #define BUFFER_SIZE 256
 
 /**
- * To use half precision, we're supposed to include cuda_fp16.h.  Unfortunately,
- * it isn't included in the search path automatically, and there's no reliable
- * way to find where it's located on disk.  Instead we provide our own definitions
- * for the few symbols we need.
- */
-struct __align__(2) __half {
-    unsigned short x;
-};
-__device__ __half __float2half_ru(const float f) {
-    __half h;
-    asm("{cvt.rp.f16.f32 %0, %1;}" : "=h"(*reinterpret_cast<unsigned short *>(&h)) : "f"(f));
-    return h;
-}
-__device__ float __half2float(const __half h) {
-    float f;
-    asm("{cvt.f32.f16 %0, %1;}" : "=f"(f) : "h"(*reinterpret_cast<const unsigned short *>(&h)));
-    return f;
-}
-struct half3 {
-    __device__ half3(real3 f) {
-        // Round up so we'll err on the side of making the box a little too large.
-        // This ensures interactions will never be missed.
-        v[0] = __float2half_ru((float) f.x);
-        v[1] = __float2half_ru((float) f.y);
-        v[2] = __float2half_ru((float) f.z);
-    }
-    __device__ real3 toReal3() const {
-        return make_real3(__half2float(v[0]), __half2float(v[1]), __half2float(v[2]));
-    }
-private:
-    __half v[3];
-};
-
-/**
  * Find a bounding box for the atoms in each block.
  */
 extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, real4 invPeriodicBoxSize, real4 periodicBoxVecX, real4 periodicBoxVecY, real4 periodicBoxVecZ,

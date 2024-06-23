@@ -68,7 +68,8 @@ namespace OpenMM {
   enum PrecisionLevel {
     Single,
     Double,
-    Mixed
+    Mixed,
+    F16
   };
   
 class OPENMM_EXPORT_COMMON CudaContext : public ComputeContext {
