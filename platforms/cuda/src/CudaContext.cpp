@@ -77,39 +77,47 @@
     }
 
 std::string half_headers = R"AAA(
-/**
- * To use half precision, we're supposed to include cuda_fp16.h.  Unfortunately,
- * it isn't included in the search path automatically, and there's no reliable
- * way to find where it's located on disk.  Instead we provide our own definitions
- * for the few symbols we need.
- */
-struct __align__(2) __half {
-    unsigned short x;
-};
-__device__ __half __float2half_ru(const float f) {
-    __half h;
-    asm("{cvt.rp.f16.f32 %0, %1;}" : "=h"(*reinterpret_cast<unsigned short *>(&h)) : "f"(f));
-    return h;
-}
-__device__ float __half2float(const __half h) {
-    float f;
-    asm("{cvt.f32.f16 %0, %1;}" : "=f"(f) : "h"(*reinterpret_cast<const unsigned short *>(&h)));
-    return f;
-}
+#define __CUDA_NO_HALF_OPERATORS__
+#include <cuda_fp16.h>
+
+struct half3;
+struct half4;
+)AAA";
+
+std::string half_headers2 = R"AAA(
+
 struct half3 {
-    __device__ half3(real3 f) {
-        // Round up so we'll err on the side of making the box a little too large.
-        // This ensures interactions will never be missed.
-        v[0] = __float2half_ru((float) f.x);
-        v[1] = __float2half_ru((float) f.y);
-        v[2] = __float2half_ru((float) f.z);
-    }
-    __device__ real3 toReal3() const {
-        return make_real3(__half2float(v[0]), __half2float(v[1]), __half2float(v[2]));
-    }
-private:
-    __half v[3];
+public:
+    __half x, y, z;
 };
+
+struct half4 {
+public:
+    __half x, y, z, w;
+};
+
+__device__ half3 make_half3(__half x, __half y, __half z)
+{
+  half3 t; t.x = x; t.y = y; t.z = z; return t;
+}
+
+__device__ half3 make_half3(__half v)
+{
+  half3 t; t.x = v; t.y = v; t.z = v; return t;
+}
+
+__device__ half4 make_half4(__half x, __half y, __half z, __half w)
+{
+  half4 t; t.x = x; t.y = y; t.z = z; t.w = w; return t;
+}
+
+__device__ half4 make_half4(__half v)
+{
+  half4 t; t.x = v; t.y = v; t.z = v; t.w = v; return t;
+}
+
+__device__ __forceinline__ __half &operator+=(__half &lh, const __half &rh) { lh = __hadd(lh, rh); return lh; }
+
 )AAA";
     
 
@@ -293,7 +301,7 @@ CudaContext::CudaContext(const System& system, int deviceIndex, bool useBlocking
       posq.initialize<float4>(*this, paddedNumAtoms, "posq");
       velm.initialize<float4>(*this, paddedNumAtoms, "velm");
       compilationDefines["make_real2"] = "make_half2";
-      compilationDefines["make_real3"] = "make_half";
+      compilationDefines["make_real3"] = "make_half3";
       compilationDefines["make_real4"] = "make_half4";
       compilationDefines["make_mixed2"] = "make_half2";
       compilationDefines["make_mixed3"] = "make_half3";
@@ -558,7 +566,10 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
         }
     }
     if (!compilationDefines.empty())
-        src << endl;
+      src << endl;
+
+    src << half_headers << endl;
+
     switch (precision) {
       case PrecisionLevel::Double : {
 	src << "typedef double real;\n";
@@ -611,7 +622,7 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
     }
     }
 
-    src << half_headers << endl;
+    src << half_headers2 << endl;
 
     src << "typedef unsigned int tileflags;\n";
     src << CudaKernelSources::common << endl;
@@ -681,14 +692,21 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
     vector<const char*> optionsVec(numOptions);
     for (int i = 0; i < numOptions; i++)
         optionsVec[i] = &splitFlags[i][0];
+
+  
     
     // Compile the program to PTX.
-    
+
+    optionsVec.push_back("--include-path=/nix/store/yrismicj7b4k7qlph8szfidim4sryb9k-cudatoolkit-11.8.0/include/");
+  
     nvrtcProgram program;
     CHECK_NVRTC_RESULT(nvrtcCreateProgram(&program, src.str().c_str(), NULL, 0, NULL, NULL), "Error creating program");
     try {
         nvrtcResult result = nvrtcCompileProgram(program, optionsVec.size(), &optionsVec[0]);
         if (result != NVRTC_SUCCESS) {
+          for (auto &option : optionsVec) {
+	    printf("option = %s\n", option);
+          }
             size_t logSize;
             nvrtcGetProgramLogSize(program, &logSize);
             vector<char> log(logSize);
@@ -975,6 +993,8 @@ vector<int> CudaContext::getDevicePrecedence() {
         precedence.push_back(-devices[i].second);
     }
 
+
+    half poo = 1000 * (half) 1.2;
     return precedence;
 }
 
@@ -984,3 +1004,4 @@ unsigned int CudaContext::getEventFlags() {
         flags += CU_EVENT_BLOCKING_SYNC;
     return flags;
 }
+
