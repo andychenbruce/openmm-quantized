@@ -117,10 +117,10 @@ KERNEL void applyShakeToPositions(int numClusters, mixed tol, GLOBAL const real4
         mixed4 xpj1 = posDelta[atoms.y];
         mixed4 pos2 = make_mixed4(0);
         mixed4 xpj2 = make_mixed4(0);
-        float invMassCentral = params.x;
-        float avgMass = params.y;
-        float d2 = params.z;
-        float invMassPeripheral = params.w;
+        mixed invMassCentral = params.x;
+        mixed  avgMass = params.y;
+        mixed d2 = params.z;
+        mixed invMassPeripheral = params.w;
         if (atoms.z != -1) {
             pos2 = loadPos(oldPos, posqCorrection, atoms.z);
             xpj2 = posDelta[atoms.z];
@@ -153,9 +153,9 @@ KERNEL void applyShakeToPositions(int numClusters, mixed tol, GLOBAL const real4
             mixed3 rpij = make_mixed3(xpi.x-xpj1.x, xpi.y-xpj1.y, xpi.z-xpj1.z);
             mixed rpsqij = rpij.x*rpij.x + rpij.y*rpij.y + rpij.z*rpij.z;
             mixed rrpr = rij1.x*rpij.x + rij1.y*rpij.y + rij1.z*rpij.z;
-            mixed diff = fabs(ld1-2.0f*rrpr-rpsqij) / (d2*tol);
-            if (diff >= 1.0f) {
-                mixed acor  = (ld1-2.0f*rrpr-rpsqij)*avgMass / (rrpr+rij1sq);
+            mixed diff = (mixed)fabs(ld1-((mixed)2.0)*rrpr-rpsqij) / (d2*tol);
+            if (diff >= (mixed)1.0) {
+                mixed acor  = (ld1-((mixed)2.0)*rrpr-rpsqij)*avgMass / (rrpr+rij1sq);
                 mixed3 dr = rij1*acor;
                 xpi.x += dr.x*invMassCentral;
                 xpi.y += dr.y*invMassCentral;
@@ -169,9 +169,9 @@ KERNEL void applyShakeToPositions(int numClusters, mixed tol, GLOBAL const real4
                 rpij = make_mixed3(xpi.x-xpj2.x, xpi.y-xpj2.y, xpi.z-xpj2.z);
                 rpsqij = rpij.x*rpij.x + rpij.y*rpij.y + rpij.z*rpij.z;
                 rrpr = rij2.x*rpij.x + rij2.y*rpij.y + rij2.z*rpij.z;
-                diff = fabs(ld2-2.0f*rrpr-rpsqij) / (d2*tol);
-                if (diff >= 1.0f) {
-                    mixed acor  = (ld2 - 2.0f*rrpr - rpsqij)*avgMass / (rrpr + rij2sq);
+                diff = (mixed)fabs(ld2-((mixed)2.0)*rrpr-rpsqij) / (d2*tol);
+                if (diff >= (mixed)1.0) {
+                    mixed acor  = (ld2 - ((mixed)2.0)*rrpr - rpsqij)*avgMass / (rrpr + rij2sq);
                     mixed3 dr = rij2*acor;
                     xpi.x += dr.x*invMassCentral;
                     xpi.y += dr.y*invMassCentral;
@@ -186,9 +186,9 @@ KERNEL void applyShakeToPositions(int numClusters, mixed tol, GLOBAL const real4
                 rpij = make_mixed3(xpi.x-xpj3.x, xpi.y-xpj3.y, xpi.z-xpj3.z);
                 rpsqij = rpij.x*rpij.x + rpij.y*rpij.y + rpij.z*rpij.z;
                 rrpr = rij3.x*rpij.x + rij3.y*rpij.y + rij3.z*rpij.z;
-                diff = fabs(ld3 - 2.0f*rrpr - rpsqij) / (d2*tol);
-                if (diff >= 1.0f) {
-                    mixed acor  = (ld3-2.0f*rrpr-rpsqij)*avgMass / (rrpr+rij3sq);
+                diff = (mixed)fabs(ld3 - ((mixed)2.0)*rrpr - rpsqij) / (d2*tol);
+                if (diff >= (mixed)1.0) {
+                    mixed acor  = (ld3-((mixed)2.0)*rrpr-rpsqij)*avgMass / (rrpr+rij3sq);
                     mixed3 dr = rij3*acor;
                     xpi.x += dr.x*invMassCentral;
                     xpi.y += dr.y*invMassCentral;
@@ -269,42 +269,42 @@ KERNEL void applyShakeToVelocities(int numClusters, mixed tol, GLOBAL const real
             converged = true;
             mixed3 rpij = make_mixed3(xpi.x-xpj1.x, xpi.y-xpj1.y, xpi.z-xpj1.z);
             mixed rrpr = rpij.x*rij1.x + rpij.y*rij1.y + rpij.z*rij1.z;
-            mixed delta = -2.0f*avgMass*rrpr/rij1sq;
+            mixed delta = ((mixed)(-2.0f*avgMass))*rrpr/rij1sq;
             mixed3 dr = rij1*delta;
-            xpi.x += dr.x*invMassCentral;
-            xpi.y += dr.y*invMassCentral;
-            xpi.z += dr.z*invMassCentral;
-            xpj1.x -= dr.x*invMassPeripheral;
-            xpj1.y -= dr.y*invMassPeripheral;
-            xpj1.z -= dr.z*invMassPeripheral;
-            if (fabs(delta) > tol)
+            xpi.x += dr.x*(mixed)invMassCentral;
+            xpi.y += dr.y*(mixed)invMassCentral;
+            xpi.z += dr.z*(mixed)invMassCentral;
+            xpj1.x -= dr.x*(mixed)invMassPeripheral;
+            xpj1.y -= dr.y*(mixed)invMassPeripheral;
+            xpj1.z -= dr.z*(mixed)invMassPeripheral;
+            if ((mixed)fabs(delta) > tol)
                 converged = false;
             if (atoms.z != -1) {
                 rpij = make_mixed3(xpi.x-xpj2.x, xpi.y-xpj2.y, xpi.z-xpj2.z);
                 rrpr = rpij.x*rij2.x + rpij.y*rij2.y + rpij.z*rij2.z;
-                delta = -2.0f*avgMass*rrpr/rij2sq;
+                delta = ((mixed)(-2.0f*avgMass))*rrpr/rij2sq;
                 dr = rij2*delta;
-                xpi.x += dr.x*invMassCentral;
-                xpi.y += dr.y*invMassCentral;
-                xpi.z += dr.z*invMassCentral;
-                xpj2.x -= dr.x*invMassPeripheral;
-                xpj2.y -= dr.y*invMassPeripheral;
-                xpj2.z -= dr.z*invMassPeripheral;
-                if (fabs(delta) > tol)
+                xpi.x += dr.x*(mixed)invMassCentral;
+                xpi.y += dr.y*(mixed)invMassCentral;
+                xpi.z += dr.z*(mixed)invMassCentral;
+                xpj2.x -= dr.x*(mixed)invMassPeripheral;
+                xpj2.y -= dr.y*(mixed)invMassPeripheral;
+                xpj2.z -= dr.z*(mixed)invMassPeripheral;
+                if ((mixed)fabs(delta) > tol)
                     converged = false;
             }
             if (atoms.w != -1) {
                 rpij = make_mixed3(xpi.x-xpj3.x, xpi.y-xpj3.y, xpi.z-xpj3.z);
                 rrpr = rpij.x*rij3.x + rpij.y*rij3.y + rpij.z*rij3.z;
-                delta = -2.0f*avgMass*rrpr/rij3sq;
+                delta = ((mixed)(-2.0f*avgMass))*rrpr/rij3sq;
                 dr = rij3*delta;
-                xpi.x += dr.x*invMassCentral;
-                xpi.y += dr.y*invMassCentral;
-                xpi.z += dr.z*invMassCentral;
-                xpj3.x -= dr.x*invMassPeripheral;
-                xpj3.y -= dr.y*invMassPeripheral;
-                xpj3.z -= dr.z*invMassPeripheral;
-                if (fabs(delta) > tol)
+                xpi.x += dr.x*(mixed)invMassCentral;
+                xpi.y += dr.y*(mixed)invMassCentral;
+                xpi.z += dr.z*(mixed)invMassCentral;
+                xpj3.x -= dr.x*(mixed)invMassPeripheral;
+                xpj3.y -= dr.y*(mixed)invMassPeripheral;
+                xpj3.z -= dr.z*(mixed)invMassPeripheral;
+                if ((mixed)fabs(delta) > tol)
                     converged = false;
             }
             iteration++;
@@ -347,9 +347,9 @@ KERNEL void applySettleToPositions(int numClusters, mixed tol, GLOBAL const real
         mixed4 xp1 = posDelta[atoms.y];
         mixed4 apos2 = loadPos(oldPos, posqCorrection, atoms.z);
         mixed4 xp2 = posDelta[atoms.z];
-        mixed m0 = 1/velm[atoms.x].w;
-        mixed m1 = 1/velm[atoms.y].w;
-        mixed m2 = 1/velm[atoms.z].w;
+        mixed m0 = (mixed)1/velm[atoms.x].w;
+        mixed m1 = (mixed)1/velm[atoms.y].w;
+        mixed m2 = (mixed)1/velm[atoms.z].w;
 
         // Apply the SETTLE algorithm.
 
@@ -360,7 +360,7 @@ KERNEL void applySettleToPositions(int numClusters, mixed tol, GLOBAL const real
         mixed yc0 = apos2.y-apos0.y;
         mixed zc0 = apos2.z-apos0.z;
 
-        mixed invTotalMass = 1/(m0+m1+m2);
+        mixed invTotalMass = (mixed)1/(m0+m1+m2);
         mixed xcom = (xp0.x*m0 + (xb0+xp1.x)*m1 + (xc0+xp2.x)*m2) * invTotalMass;
         mixed ycom = (xp0.y*m0 + (yb0+xp1.y)*m1 + (yc0+xp2.y)*m2) * invTotalMass;
         mixed zcom = (xp0.z*m0 + (zb0+xp1.z)*m1 + (zc0+xp2.z)*m2) * invTotalMass;
@@ -417,17 +417,17 @@ KERNEL void applySettleToPositions(int numClusters, mixed tol, GLOBAL const real
         mixed ra = rb*(m1+m2)*invTotalMass;
         rb -= ra;
         mixed sinphi = za1d/ra;
-        mixed cosphi = sqrt(1-sinphi*sinphi);
-        mixed sinpsi = (zb1d-zc1d) / (2*rc*cosphi);
-        mixed cospsi = sqrt(1-sinpsi*sinpsi);
+        mixed cosphi = sqrt((mixed)1-sinphi*sinphi);
+        mixed sinpsi = (zb1d-zc1d) / (((mixed)(2*rc))*cosphi);
+        mixed cospsi = sqrt((mixed)1-sinpsi*sinpsi);
 
         mixed ya2d =   ra*cosphi;
-        mixed xb2d = - rc*cospsi;
-        mixed yb2d = - rb*cosphi - rc*sinpsi*sinphi;
-        mixed yc2d = - rb*cosphi + rc*sinpsi*sinphi;
+        mixed xb2d = - (mixed)rc*cospsi;
+        mixed yb2d = - rb*cosphi - (mixed)rc*sinpsi*sinphi;
+        mixed yc2d = - rb*cosphi + (mixed)rc*sinpsi*sinphi;
         mixed xb2d2 = xb2d*xb2d;
-        mixed hh2 = 4.0f*xb2d2 + (yb2d-yc2d)*(yb2d-yc2d) + (zb1d-zc1d)*(zb1d-zc1d);
-        mixed deltx = 2.0f*xb2d + sqrt(4.0f*xb2d2 - hh2 + params.y*params.y);
+        mixed hh2 = (mixed)4.0*xb2d2 + (yb2d-yc2d)*(yb2d-yc2d) + (zb1d-zc1d)*(zb1d-zc1d);
+        mixed deltx = (mixed)2.0*xb2d + sqrt((mixed)4.0*xb2d2 - hh2 + params.y*params.y);
         xb2d -= deltx*0.5f;
 
         //                                        --- Step3  al,be,ga ---

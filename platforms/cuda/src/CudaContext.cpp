@@ -77,7 +77,8 @@
     }
 
 std::string half_headers = R"AAA(
-#define __CUDA_NO_HALF_OPERATORS__
+//#define __CUDA_NO_HALF_OPERATORS__
+//#define __CUDA_NO_HALF_CONVERSIONS__
 #include <cuda_fp16.h>
 
 struct half3;
@@ -88,35 +89,33 @@ std::string half_headers2 = R"AAA(
 
 struct half3 {
 public:
-    __half x, y, z;
+    half x, y, z;
 };
 
 struct half4 {
 public:
-    __half x, y, z, w;
+    half x, y, z, w;
 };
 
-__device__ half3 make_half3(__half x, __half y, __half z)
+__device__ half3 make_half3(half x, half y, half z)
 {
   half3 t; t.x = x; t.y = y; t.z = z; return t;
 }
 
-__device__ half3 make_half3(__half v)
+__device__ half3 make_half3(half v)
 {
   half3 t; t.x = v; t.y = v; t.z = v; return t;
 }
 
-__device__ half4 make_half4(__half x, __half y, __half z, __half w)
+__device__ half4 make_half4(half x, half y, half z, half w)
 {
   half4 t; t.x = x; t.y = y; t.z = z; t.w = w; return t;
 }
 
-__device__ half4 make_half4(__half v)
+__device__ half4 make_half4(half v)
 {
   half4 t; t.x = v; t.y = v; t.z = v; t.w = v; return t;
 }
-
-__device__ __forceinline__ __half &operator+=(__half &lh, const __half &rh) { lh = __hadd(lh, rh); return lh; }
 
 )AAA";
     
@@ -682,7 +681,7 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
 
     // Split the command line flags into an array of options.
     
-    string flags = "-arch=compute_"+compileArchitecture+" "+options;
+    string flags = string("-arch=sm_70")+" "+options;
     stringstream flagsStream(flags);
     string flag;
     vector<string> splitFlags;
@@ -697,7 +696,7 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
     
     // Compile the program to PTX.
 
-    optionsVec.push_back("--include-path=/nix/store/yrismicj7b4k7qlph8szfidim4sryb9k-cudatoolkit-11.8.0/include/");
+    optionsVec.push_back("--include-path=/data_18TB_2/andy/miniconda/targets/x86_64-linux/include/");
   
     nvrtcProgram program;
     CHECK_NVRTC_RESULT(nvrtcCreateProgram(&program, src.str().c_str(), NULL, 0, NULL, NULL), "Error creating program");
@@ -994,7 +993,6 @@ vector<int> CudaContext::getDevicePrecedence() {
     }
 
 
-    half poo = 1000 * (half) 1.2;
     return precedence;
 }
 
