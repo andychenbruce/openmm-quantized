@@ -701,16 +701,12 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
     nvrtcProgram program;
     CHECK_NVRTC_RESULT(nvrtcCreateProgram(&program, src.str().c_str(), NULL, 0, NULL, NULL), "Error creating program");
     try {
-        nvrtcResult result = nvrtcCompileProgram(program, optionsVec.size(), &optionsVec[0]);
-        if (result != NVRTC_SUCCESS) {
-          for (auto &option : optionsVec) {
-	    printf("option = %s\n", option);
-          }
+    	nvrtcResult result = nvrtcCompileProgram(program, optionsVec.size(), &optionsVec[0]);
+	if (result != NVRTC_SUCCESS) {
             size_t logSize;
             nvrtcGetProgramLogSize(program, &logSize);
             vector<char> log(logSize);
             nvrtcGetProgramLog(program, &log[0]);
-            printf("SRC = %s\n", src.str().c_str());
             throw OpenMMException("BRUHBRUH 123 Error compiling program: "+string(&log[0]));
         }
         size_t ptxSize;

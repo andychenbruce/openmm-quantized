@@ -427,8 +427,8 @@ KERNEL void applySettleToPositions(int numClusters, mixed tol, GLOBAL const real
         mixed yc2d = - rb*cosphi + (mixed)rc*sinpsi*sinphi;
         mixed xb2d2 = xb2d*xb2d;
         mixed hh2 = (mixed)4.0*xb2d2 + (yb2d-yc2d)*(yb2d-yc2d) + (zb1d-zc1d)*(zb1d-zc1d);
-        mixed deltx = (mixed)2.0*xb2d + sqrt((mixed)4.0*xb2d2 - hh2 + params.y*params.y);
-        xb2d -= deltx*0.5f;
+        mixed deltx = (mixed)2.0*xb2d + (mixed)sqrt((mixed)4.0*xb2d2 - hh2 + ((mixed)(params.y*params.y)));
+        xb2d -= deltx*(mixed)0.5;
 
         //                                        --- Step3  al,be,ga ---
 
@@ -437,11 +437,11 @@ KERNEL void applySettleToPositions(int numClusters, mixed tol, GLOBAL const real
         mixed gamma = xb0d*yb1d - xb1d*yb0d + xc0d*yc1d - xc1d*yc0d;
 
         mixed al2be2 = alpha*alpha + beta*beta;
-        mixed sintheta = (alpha*gamma - beta*sqrt(al2be2 - gamma*gamma)) / al2be2;
+        mixed sintheta = (alpha*gamma - beta*(mixed)sqrt(al2be2 - gamma*gamma)) / al2be2;
 
         //                                        --- Step4  A3' ---
 
-        mixed costheta = sqrt(1-sintheta*sintheta);
+        mixed costheta = sqrt(((mixed)1)-sintheta*sintheta);
         mixed xa3d = - ya2d*sintheta;
         mixed ya3d =   ya2d*costheta;
         mixed za3d = za1d;
@@ -510,31 +510,31 @@ KERNEL void applySettleToVelocities(int numClusters, mixed tol, GLOBAL const rea
         // Compute intermediate quantities: the atom masses, the bond directions, the relative velocities,
         // and the angle cosines and sines.
         
-        mixed mA = 1/v0.w;
-        mixed mB = 1/v1.w;
-        mixed mC = 1/v2.w;
+        mixed mA = ((mixed)1)/v0.w;
+        mixed mB = ((mixed)1)/v1.w;
+        mixed mC = ((mixed)1)/v2.w;
         mixed3 eAB = make_mixed3(apos1.x-apos0.x, apos1.y-apos0.y, apos1.z-apos0.z);
         mixed3 eBC = make_mixed3(apos2.x-apos1.x, apos2.y-apos1.y, apos2.z-apos1.z);
         mixed3 eCA = make_mixed3(apos0.x-apos2.x, apos0.y-apos2.y, apos0.z-apos2.z);
-        eAB *= RSQRT(eAB.x*eAB.x + eAB.y*eAB.y + eAB.z*eAB.z);
-        eBC *= RSQRT(eBC.x*eBC.x + eBC.y*eBC.y + eBC.z*eBC.z);
-        eCA *= RSQRT(eCA.x*eCA.x + eCA.y*eCA.y + eCA.z*eCA.z);
+        eAB *= (mixed)RSQRT(eAB.x*eAB.x + eAB.y*eAB.y + eAB.z*eAB.z);
+        eBC *= (mixed)RSQRT(eBC.x*eBC.x + eBC.y*eBC.y + eBC.z*eBC.z);
+        eCA *= (mixed)RSQRT(eCA.x*eCA.x + eCA.y*eCA.y + eCA.z*eCA.z);
         mixed vAB = (v1.x-v0.x)*eAB.x + (v1.y-v0.y)*eAB.y + (v1.z-v0.z)*eAB.z;
         mixed vBC = (v2.x-v1.x)*eBC.x + (v2.y-v1.y)*eBC.y + (v2.z-v1.z)*eBC.z;
         mixed vCA = (v0.x-v2.x)*eCA.x + (v0.y-v2.y)*eCA.y + (v0.z-v2.z)*eCA.z;
         mixed cA = -(eAB.x*eCA.x + eAB.y*eCA.y + eAB.z*eCA.z);
         mixed cB = -(eAB.x*eBC.x + eAB.y*eBC.y + eAB.z*eBC.z);
         mixed cC = -(eBC.x*eCA.x + eBC.y*eCA.y + eBC.z*eCA.z);
-        mixed s2A = 1-cA*cA;
-        mixed s2B = 1-cB*cB;
-        mixed s2C = 1-cC*cC;
+        mixed s2A = ((mixed)1)-cA*cA;
+        mixed s2B = ((mixed)1)-cB*cB;
+        mixed s2C = ((mixed)1)-cC*cC;
         
         // Solve the equations.  These are different from those in the SETTLE paper (JCC 13(8), pp. 952-962, 1992), because
         // in going from equations B1 to B2, they make the assumption that mB=mC (but don't bother to mention they're
         // making that assumption).  We allow all three atoms to have different masses.
         
-        mixed mABCinv = 1/(mA*mB*mC);
-        mixed denom = (((s2A*mB+s2B*mA)*mC+(s2A*mB*mB+2*(cA*cB*cC+1)*mA*mB+s2B*mA*mA))*mC+s2C*mA*mB*(mA+mB))*mABCinv;
+        mixed mABCinv = ((mixed)1)/(mA*mB*mC);
+        mixed denom = (((s2A*mB+s2B*mA)*mC+(s2A*mB*mB+((mixed)2)*(cA*cB*cC+((mixed)1))*mA*mB+s2B*mA*mA))*mC+s2C*mA*mB*(mA+mB))*mABCinv;
         mixed tab = ((cB*cC*mA-cA*mB-cA*mC)*vCA + (cA*cC*mB-cB*mC-cB*mA)*vBC + (s2C*mA*mA*mB*mB*mABCinv+(mA+mB+mC))*vAB)/denom;
         mixed tbc = ((cA*cB*mC-cC*mB-cC*mA)*vCA + (s2A*mB*mB*mC*mC*mABCinv+(mA+mB+mC))*vBC + (cA*cC*mB-cB*mA-cB*mC)*vAB)/denom;
         mixed tca = ((s2B*mA*mA*mC*mC*mABCinv+(mA+mB+mC))*vCA + (cA*cB*mC-cC*mB-cC*mA)*vBC + (cB*cC*mA-cA*mB-cA*mC)*vAB)/denom;
@@ -605,8 +605,8 @@ DEVICE void computeCCMAPositionConstraintForce(GLOBAL const int2* RESTRICT const
     if (LOCAL_ID == 0)
         *groupConverged = 1;
     SYNC_THREADS;
-    mixed lowerTol = 1-2*tol+tol*tol;
-    mixed upperTol = 1+2*tol+tol*tol;
+    mixed lowerTol = ((mixed)1)-((mixed)2)*tol+tol*tol;
+    mixed upperTol = ((mixed)1)+((mixed)2)*tol+tol*tol;
     bool threadConverged = true;
     for (int index = GLOBAL_ID; index < NUM_CCMA_CONSTRAINTS; index += GLOBAL_SIZE) {
         // Compute the force due to this constraint.
@@ -622,7 +622,7 @@ DEVICE void computeCCMAPositionConstraintForce(GLOBAL const int2* RESTRICT const
         mixed rp2 = rp_ij.x*rp_ij.x + rp_ij.y*rp_ij.y + rp_ij.z*rp_ij.z;
         mixed dist2 = dir.w*dir.w;
         mixed diff = dist2 - rp2;
-        delta1[index] = (rrpr > d_ij2*1e-6f ? reducedMass[index]*diff/rrpr : 0.0f);
+        delta1[index] = (rrpr > d_ij2*((mixed)1e-6) ? reducedMass[index]*diff/rrpr : (mixed)0.0);
         threadConverged &= (rp2 > lowerTol*dist2 && rp2 < upperTol*dist2);
     }
     if (*groupConverged && !threadConverged)
@@ -665,8 +665,8 @@ DEVICE void computeCCMAVelocityConstraintForce(GLOBAL const int2* RESTRICT const
         mixed4 rp_ij = atomPositions[atoms.x]-atomPositions[atoms.y];
         mixed rrpr = rp_ij.x*dir.x + rp_ij.y*dir.y + rp_ij.z*dir.z;
         mixed d_ij2 = dir.x*dir.x + dir.y*dir.y + dir.z*dir.z;
-        delta1[index] = -2*reducedMass[index]*rrpr/d_ij2;
-        threadConverged &= (fabs(delta1[index]) <= tol);
+        delta1[index] = ((mixed)-2)*reducedMass[index]*rrpr/d_ij2;
+        threadConverged &= ((mixed)fabs(delta1[index]) <= tol);
     }
     if (*groupConverged && !threadConverged)
         *groupConverged = 0;
@@ -890,8 +890,8 @@ KERNEL void computeVirtualSites(GLOBAL real4* RESTRICT posq, GLOBAL real4* RESTR
         mixed3 zdir = cross(xdir, ydir);
         mixed normXdir = sqrt(xdir.x*xdir.x+xdir.y*xdir.y+xdir.z*xdir.z);
         mixed normZdir = sqrt(zdir.x*zdir.x+zdir.y*zdir.y+zdir.z*zdir.z);
-        mixed invNormXdir = (normXdir > 0 ? 1/normXdir : 0);
-        mixed invNormZdir = (normZdir > 0 ? 1/normZdir : 0);
+        mixed invNormXdir = (normXdir > ((mixed)0) ? ((mixed)1)/normXdir : ((mixed)0));
+        mixed invNormZdir = (normZdir > ((mixed)0) ? ((mixed)1)/normZdir : ((mixed)0));
         xdir *= invNormXdir;
         zdir *= invNormZdir;
         ydir = cross(zdir, xdir);
@@ -906,8 +906,8 @@ KERNEL void computeVirtualSites(GLOBAL real4* RESTRICT posq, GLOBAL real4* RESTR
 }
 
 inline DEVICE real3 loadForce(int index, GLOBAL const mm_long* RESTRICT force) {
-    real scale = 1/((real) 0x100000000);
-    return make_real3(scale*force[index], scale*force[index+PADDED_NUM_ATOMS], scale*force[index+PADDED_NUM_ATOMS*2]);
+  real scale = ((real)1)/((real) (long long)0x100000000);
+  return make_real3(scale*((real)force[index]), scale*((real)force[index+PADDED_NUM_ATOMS]), scale*((real)force[index+PADDED_NUM_ATOMS*2]));
 }
 
 inline DEVICE void addForce(int index, GLOBAL mm_long* RESTRICT force, real3 value) {
@@ -1010,8 +1010,8 @@ KERNEL void distributeVirtualSiteForces(GLOBAL const real4* RESTRICT posq, GLOBA
         mixed3 zdir = cross(xdir, ydir);
         mixed normXdir = sqrt(xdir.x*xdir.x+xdir.y*xdir.y+xdir.z*xdir.z);
         mixed normZdir = sqrt(zdir.x*zdir.x+zdir.y*zdir.y+zdir.z*zdir.z);
-        mixed invNormXdir = (normXdir > 0 ? 1/normXdir : 0);
-        mixed invNormZdir = (normZdir > 0 ? 1/normZdir : 0);
+        mixed invNormXdir = (normXdir > ((mixed)0) ? ((mixed)1)/normXdir : ((mixed)0));
+        mixed invNormZdir = (normZdir > ((mixed)0) ? ((mixed)1)/normZdir : ((mixed)0));
         mixed3 dx = xdir*invNormXdir;
         mixed3 dz = zdir*invNormZdir;
         mixed3 dy = cross(dz, dx);
@@ -1036,15 +1036,15 @@ KERNEL void distributeVirtualSiteForces(GLOBAL const real4* RESTRICT posq, GLOBA
             mixed sy = t1*dz.z-t3*dz.x;
             mixed sz = t2*dz.x-t1*dz.y;
             real3 fresult = make_real3(0);
-            fresult.x += fp1.x*wxScaled*(1-dx.x*dx.x) + fp1.z*(dz.x*sx   ) + fp1.y*((-dx.x*dy.x     )*wxScaled + dy.x*sx - dx.y*t2 - dx.z*t3) + f.x*originWeight;
+            fresult.x += fp1.x*wxScaled*(((mixed)1)-dx.x*dx.x) + fp1.z*(dz.x*sx   ) + fp1.y*((-dx.x*dy.x     )*wxScaled + dy.x*sx - dx.y*t2 - dx.z*t3) + f.x*originWeight;
             fresult.y += fp1.x*wxScaled*( -dx.x*dx.y) + fp1.z*(dz.x*sy+t3) + fp1.y*((-dx.y*dy.x-dz.z)*wxScaled + dy.x*sy + dx.y*t1);
             fresult.z += fp1.x*wxScaled*( -dx.x*dx.z) + fp1.z*(dz.x*sz-t2) + fp1.y*((-dx.z*dy.x+dz.y)*wxScaled + dy.x*sz + dx.z*t1);
             fresult.x += fp2.x*wxScaled*( -dx.y*dx.x) + fp2.z*(dz.y*sx-t3) - fp2.y*(( dx.x*dy.y-dz.z)*wxScaled - dy.y*sx - dx.x*t2);
-            fresult.y += fp2.x*wxScaled*(1-dx.y*dx.y) + fp2.z*(dz.y*sy   ) - fp2.y*(( dx.y*dy.y     )*wxScaled - dy.y*sy + dx.x*t1 + dx.z*t3) + f.y*originWeight;
+            fresult.y += fp2.x*wxScaled*(((mixed)1)-dx.y*dx.y) + fp2.z*(dz.y*sy   ) - fp2.y*(( dx.y*dy.y     )*wxScaled - dy.y*sy + dx.x*t1 + dx.z*t3) + f.y*originWeight;
             fresult.z += fp2.x*wxScaled*( -dx.y*dx.z) + fp2.z*(dz.y*sz+t1) - fp2.y*(( dx.z*dy.y+dz.x)*wxScaled - dy.y*sz - dx.z*t2);
             fresult.x += fp3.x*wxScaled*( -dx.z*dx.x) + fp3.z*(dz.z*sx+t2) + fp3.y*((-dx.x*dy.z-dz.y)*wxScaled + dy.z*sx + dx.x*t3);
             fresult.y += fp3.x*wxScaled*( -dx.z*dx.y) + fp3.z*(dz.z*sy-t1) + fp3.y*((-dx.y*dy.z+dz.x)*wxScaled + dy.z*sy + dx.y*t3);
-            fresult.z += fp3.x*wxScaled*(1-dx.z*dx.z) + fp3.z*(dz.z*sz   ) + fp3.y*((-dx.z*dy.z     )*wxScaled + dy.z*sz - dx.x*t1 - dx.y*t2) + f.z*originWeight;
+            fresult.z += fp3.x*wxScaled*(((mixed)1)-dx.z*dx.z) + fp3.z*(dz.z*sz   ) + fp3.y*((-dx.z*dy.z     )*wxScaled + dy.z*sz - dx.x*t1 - dx.y*t2) + f.z*originWeight;
             addForce(localCoordsAtoms[j], force, fresult);
         }
     }
@@ -1064,13 +1064,13 @@ KERNEL void saveDistributedForces(GLOBAL const mm_long* RESTRICT longForces, GLO
  * Apply a time shift to the velocities before computing kinetic energy.
  */
 KERNEL void timeShiftVelocities(GLOBAL mixed4* RESTRICT velm, GLOBAL const mm_long* RESTRICT force, real timeShift) {
-    const mixed scale = timeShift/(mixed) 0x100000000;
+  const mixed scale = timeShift/((mixed) (long long)0x100000000);
     for (int index = GLOBAL_ID; index < NUM_ATOMS; index += GLOBAL_SIZE) {
         mixed4 velocity = velm[index];
-        if (velocity.w != 0.0) {
-            velocity.x += scale*force[index]*velocity.w;
-            velocity.y += scale*force[index+PADDED_NUM_ATOMS]*velocity.w;
-            velocity.z += scale*force[index+PADDED_NUM_ATOMS*2]*velocity.w;
+        if (velocity.w != (mixed)0.0) {
+            velocity.x += scale*((mixed)force[index])*velocity.w;
+            velocity.y += scale*((mixed)force[index+PADDED_NUM_ATOMS])*velocity.w;
+            velocity.z += scale*((mixed)force[index+PADDED_NUM_ATOMS*2])*velocity.w;
             velm[index] = velocity;
         }
     }
