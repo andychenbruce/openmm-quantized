@@ -2,6 +2,28 @@
 #define BUFFER_SIZE 256
 
 /**
+ * To use half precision, we're supposed to include cuda_fp16.h.  Unfortunately,
+ * it isn't included in the search path automatically, and there's no reliable
+ * way to find where it's located on disk.  Instead we provide our own definitions
+ * for the few symbols we need.
+ */
+struct half3_block {
+    __device__ half3_block(real3 f) {
+        // Round up so we'll err on the side of making the box a little too large.
+        // This ensures interactions will never be missed.
+        v[0] = f.x;
+        v[1] = f.y;
+        v[2] = f.z;
+    }
+    __device__ real3 toReal3() const {
+        return make_real3(v[0], v[1], v[2]);
+    }
+private:
+    __half v[3];
+};
+
+
+/**
  * Find a bounding box for the atoms in each block.
  */
 extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, real4 invPeriodicBoxSize, real4 periodicBoxVecX, real4 periodicBoxVecY, real4 periodicBoxVecZ,
@@ -101,9 +123,9 @@ extern "C" __global__ void computeSortKeys(const real4* __restrict__ blockBoundi
  * Sort the data about bounding boxes so it can be accessed more efficiently in the next kernel.
  */
 extern "C" __global__ void sortBoxData(const unsigned int* __restrict__ sortedBlocks, const real4* __restrict__ blockCenter,
-        const real4* __restrict__ blockBoundingBox, real4* __restrict__ sortedBlockCenter, half3* __restrict__ sortedBlockBoundingBox,
+        const real4* __restrict__ blockBoundingBox, real4* __restrict__ sortedBlockCenter, half3_block* __restrict__ sortedBlockBoundingBox,
 #ifdef USE_LARGE_BLOCKS
-        real4* __restrict__ largeBlockCenter, half3* __restrict__ largeBlockBoundingBox, real4 periodicBoxSize,
+        real4* __restrict__ largeBlockCenter, half3_block* __restrict__ largeBlockBoundingBox, real4 periodicBoxSize,
         real4 invPeriodicBoxSize, real4 periodicBoxVecX, real4 periodicBoxVecY, real4 periodicBoxVecZ,
 #endif
         const real4* __restrict__ posq, const real4* __restrict__ oldPositions,
@@ -111,7 +133,7 @@ extern "C" __global__ void sortBoxData(const unsigned int* __restrict__ sortedBl
     for (int i = threadIdx.x+blockIdx.x*blockDim.x; i < NUM_BLOCKS; i += blockDim.x*gridDim.x) {
         unsigned int index = sortedBlocks[i] & BLOCK_INDEX_MASK;
         sortedBlockCenter[i] = blockCenter[index];
-        sortedBlockBoundingBox[i] = half3(trimTo3(blockBoundingBox[index]));
+        sortedBlockBoundingBox[i] = half3_block(trimTo3(blockBoundingBox[index]));
 
 #ifdef USE_LARGE_BLOCKS
         // Compute the sizes of large blocks (composed of 32 regular blocks) starting from each block.
@@ -131,7 +153,7 @@ extern "C" __global__ void sortBoxData(const unsigned int* __restrict__ sortedBl
             maxPos = make_real4(max(maxPos.x, blockPos.x+width.x), max(maxPos.y, blockPos.y+width.y), max(maxPos.z, blockPos.z+width.z), 0);
         }
         largeBlockCenter[i] = 0.5f*(maxPos+minPos);
-        largeBlockBoundingBox[i] = half3(trimTo3(0.5f*(maxPos-minPos)));
+        largeBlockBoundingBox[i] = half3_block(trimTo3(0.5f*(maxPos-minPos)));
 #endif
     }
 
@@ -254,9 +276,9 @@ __device__ int saveSinglePairs(int x, int* atoms, int* flags, int length, unsign
 extern "C" __global__ __launch_bounds__(GROUP_SIZE,3) void findBlocksWithInteractions(real4 periodicBoxSize, real4 invPeriodicBoxSize, real4 periodicBoxVecX, real4 periodicBoxVecY, real4 periodicBoxVecZ,
         unsigned int* __restrict__ interactionCount, int* __restrict__ interactingTiles, unsigned int* __restrict__ interactingAtoms,
         int2* __restrict__ singlePairs, const real4* __restrict__ posq, unsigned int maxTiles, unsigned int maxSinglePairs, unsigned int startBlockIndex,
-        unsigned int numBlocks, unsigned int* __restrict__ sortedBlocks, const real4* __restrict__ sortedBlockCenter, const half3* __restrict__ sortedBlockBoundingBox,
+        unsigned int numBlocks, unsigned int* __restrict__ sortedBlocks, const real4* __restrict__ sortedBlockCenter, const half3_block* __restrict__ sortedBlockBoundingBox,
 #ifdef USE_LARGE_BLOCKS
-        real4* __restrict__ largeBlockCenter, half3* __restrict__ largeBlockBoundingBox,
+        real4* __restrict__ largeBlockCenter, half3_block* __restrict__ largeBlockBoundingBox,
 #endif
         const unsigned int* __restrict__ exclusionIndices, const unsigned int* __restrict__ exclusionRowIndices,
         real4* __restrict__ oldPositions, const int* __restrict__ rebuildNeighborList) {

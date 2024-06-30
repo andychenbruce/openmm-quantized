@@ -54,6 +54,14 @@ inline __device__ int4 operator-(int4 a) {
     return make_int4(-a.x, -a.y, -a.z, -a.w);
 }
 
+inline __device__ half3 operator-(half3 a) {
+    return make_half3(-a.x, -a.y, -a.z);
+}
+
+inline __device__ half4 operator-(half4 a) {
+    return make_half4(-a.x, -a.y, -a.z, -a.w);
+}
+
 inline __device__ float2 operator-(float2 a) {
     return make_float2(-a.x, -a.y);
 }

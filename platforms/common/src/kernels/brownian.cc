@@ -8,10 +8,10 @@ KERNEL void integrateBrownianPart1(int numAtoms, int paddedNumAtoms, mixed tauDe
     const mixed fscale = tauDeltaT/(mixed) 0x100000000;
     for (int index = GLOBAL_ID; index < numAtoms; index += GLOBAL_SIZE) {
         mixed invMass = velm[index].w;
-        if (invMass != 0) {
-            posDelta[index].x = fscale*invMass*force[index] + noiseAmplitude*SQRT(invMass)*random[randomIndex].x;
-            posDelta[index].y = fscale*invMass*force[index+paddedNumAtoms] + noiseAmplitude*SQRT(invMass)*random[randomIndex].y;
-            posDelta[index].z = fscale*invMass*force[index+paddedNumAtoms*2] + noiseAmplitude*SQRT(invMass)*random[randomIndex].z;
+        if (invMass != (mixed)0) {
+            posDelta[index].x = fscale*invMass*(mixed)force[index] + noiseAmplitude*(mixed)SQRT(invMass)*(mixed)random[randomIndex].x;
+            posDelta[index].y = fscale*invMass*(mixed)force[index+paddedNumAtoms] + noiseAmplitude*(mixed)SQRT(invMass)*(mixed)random[randomIndex].y;
+            posDelta[index].z = fscale*invMass*(mixed)force[index+paddedNumAtoms*2] + noiseAmplitude*(mixed)SQRT(invMass)*(mixed)random[randomIndex].z;
         }
         randomIndex += GLOBAL_SIZE;
     }
@@ -27,7 +27,7 @@ KERNEL void integrateBrownianPart2(int numAtoms, mixed oneOverDeltaT, GLOBAL rea
 #endif
         ) {
     for (int index = GLOBAL_ID; index < numAtoms; index += GLOBAL_SIZE) {
-        if (velm[index].w != 0) {
+        if (velm[index].w != (mixed)0) {
             mixed4 delta = posDelta[index];
             velm[index].x = oneOverDeltaT*delta.x;
             velm[index].y = oneOverDeltaT*delta.y;
