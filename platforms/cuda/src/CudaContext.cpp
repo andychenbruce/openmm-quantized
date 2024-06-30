@@ -453,14 +453,14 @@ void CudaContext::initialize() {
     case PrecisionLevel::Double:{
       energyBuffer.initialize<double>(*this, numEnergyBuffers, "energyBuffer");
       energySum.initialize<double>(*this, multiprocessors, "energySum");
-      int pinnedBufferSize = max(paddedNumAtoms*4, numEnergyBuffers);
+      int pinnedBufferSize = max(paddedNumAtoms * 4, numEnergyBuffers);
       CHECK_RESULT(cuMemHostAlloc(&pinnedBuffer, pinnedBufferSize*sizeof(double), 0));
       break;
     }
     case PrecisionLevel::Mixed: {
       energyBuffer.initialize<double>(*this, numEnergyBuffers, "energyBuffer");
       energySum.initialize<double>(*this, multiprocessors, "energySum");
-      int pinnedBufferSize = max(paddedNumAtoms*4, numEnergyBuffers);
+      int pinnedBufferSize = max(paddedNumAtoms * 4, numEnergyBuffers);
       CHECK_RESULT(cuMemHostAlloc(&pinnedBuffer,
                                   pinnedBufferSize * sizeof(double), 0));
       break;
@@ -468,14 +468,14 @@ void CudaContext::initialize() {
     case PrecisionLevel::Single: {
       energyBuffer.initialize<float>(*this, numEnergyBuffers, "energyBuffer");
       energySum.initialize<float>(*this, multiprocessors, "energySum");
-      int pinnedBufferSize = max(paddedNumAtoms*6, numEnergyBuffers);
+      int pinnedBufferSize = max(paddedNumAtoms * 6, numEnergyBuffers);
       CHECK_RESULT(cuMemHostAlloc(&pinnedBuffer, pinnedBufferSize*sizeof(float), 0));
       break;
     }
     case PrecisionLevel::F16: {
-      energyBuffer.initialize<float>(*this, numEnergyBuffers, "energyBuffer");
-      energySum.initialize<float>(*this, multiprocessors, "energySum");
-      int pinnedBufferSize = max(paddedNumAtoms*6, numEnergyBuffers);
+      energyBuffer.initialize<half>(*this, numEnergyBuffers, "energyBuffer");
+      energySum.initialize<half>(*this, multiprocessors, "energySum");
+      int pinnedBufferSize = max(paddedNumAtoms*8, numEnergyBuffers);//??? why is it 4 then 6, guessing 8 but have no idea
       CHECK_RESULT(cuMemHostAlloc(&pinnedBuffer, pinnedBufferSize*sizeof(half), 0));
       break;
     }
@@ -489,8 +489,8 @@ void CudaContext::initialize() {
           make_double4(0.0, 0.0, 0.0, mass == 0.0 ? 0.0 : 1.0 / mass);
         break;
       case PrecisionLevel::Single:
-        ((float4 *)pinnedBuffer)[i] = make_float4(
-						  0.0f, 0.0f, 0.0f, mass == 0.0 ? 0.0f : (float)(1.0 / mass));
+        ((float4 *)pinnedBuffer)[i] =
+          make_float4(0.0f, 0.0f, 0.0f, mass == 0.0 ? 0.0f : (float)(1.0 / mass));
         break;
       case PrecisionLevel::F16:
         half2 first(0.0f, 0.0f);
