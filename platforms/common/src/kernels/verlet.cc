@@ -11,7 +11,7 @@ KERNEL void integrateVerletPart1(int numAtoms, int paddedNumAtoms, GLOBAL const 
     const mixed2 stepSize = dt[0];
     const mixed dtPos = stepSize.y;
     const mixed dtVel = (mixed)0.5*(stepSize.x+stepSize.y);
-    const mixed scale = dtVel/(mixed) 0x100000000;
+    const mixed scale = dtVel/(mixed) (long long) 0x100000000;
     for (int index = GLOBAL_ID; index < numAtoms; index += GLOBAL_SIZE) {
         mixed4 velocity = velm[index];
         if (velocity.w != (mixed)0.0) {

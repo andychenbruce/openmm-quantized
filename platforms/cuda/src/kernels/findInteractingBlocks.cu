@@ -46,8 +46,8 @@ extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, 
             real4 center = 0.5f*(maxPos+minPos);
             APPLY_PERIODIC_TO_POS_WITH_CENTER(pos, center)
 #endif
-            minPos = make_real4(min(minPos.x,pos.x), min(minPos.y,pos.y), min(minPos.z,pos.z), 0);
-            maxPos = make_real4(max(maxPos.x,pos.x), max(maxPos.y,pos.y), max(maxPos.z,pos.z), 0);
+            minPos = make_real4(min((double)minPos.x,(double)pos.x), min((double)minPos.y,(double)pos.y), min((double)minPos.z,(double)pos.z), 0);
+            maxPos = make_real4(max((double)maxPos.x,(double)pos.x), max((double)maxPos.y,(double)pos.y), max((double)maxPos.z,(double)pos.z), 0);
         }
         real4 blockSize = 0.5f*(maxPos-minPos);
         real4 center = 0.5f*(maxPos+minPos);
@@ -58,14 +58,14 @@ extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, 
 #ifdef USE_PERIODIC
             APPLY_PERIODIC_TO_DELTA(delta)
 #endif
-            center.w = max(center.w, delta.x*delta.x+delta.y*delta.y+delta.z*delta.z);
+            center.w = max((double)center.w, (double)(delta.x*delta.x+delta.y*delta.y+delta.z*delta.z));
         }
         center.w = sqrt(center.w);
         blockBoundingBox[index] = blockSize;
         blockCenter[index] = center;
         real totalSize = blockSize.x+blockSize.y+blockSize.z;
-        minSize = min(minSize, totalSize);
-        maxSize = max(maxSize, totalSize);
+        minSize = min((double)minSize, (double)totalSize);
+        maxSize = max((double)maxSize, (double)totalSize);
         index += blockDim.x*gridDim.x;
         base = index*TILE_SIZE;
     }
@@ -78,8 +78,8 @@ extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, 
     __syncthreads();
     for (int step = 1; step < 64; step *= 2) {
         if (threadIdx.x+step < 64 && threadIdx.x%(2*step) == 0) {
-            minBuffer[threadIdx.x] = min(minBuffer[threadIdx.x], minBuffer[threadIdx.x+step]);
-            maxBuffer[threadIdx.x] = max(maxBuffer[threadIdx.x], maxBuffer[threadIdx.x+step]);
+            minBuffer[threadIdx.x] = min((double)minBuffer[threadIdx.x], (double)minBuffer[threadIdx.x+step]);
+            maxBuffer[threadIdx.x] = max((double)maxBuffer[threadIdx.x], (double)maxBuffer[threadIdx.x+step]);
         }
         __syncthreads();
     }
@@ -97,8 +97,8 @@ extern "C" __global__ void computeSortKeys(const real4* __restrict__ blockBoundi
         sizeRange = blockSizeRange[0];
         for (int i = 1; i < numSizes; i++) {
             real2 size = blockSizeRange[i];
-            sizeRange.x = min(sizeRange.x, size.x);
-            sizeRange.y = max(sizeRange.y, size.y);
+            sizeRange.x = min((double)sizeRange.x, (double)size.x);
+            sizeRange.y = max((double)sizeRange.y, (double)size.y);
         }
         sizeRange.x = LOG(sizeRange.x);
         sizeRange.y = LOG(sizeRange.y);
@@ -109,7 +109,7 @@ extern "C" __global__ void computeSortKeys(const real4* __restrict__ blockBoundi
     // order part.
 
     int numSizeBins = 20;
-    real scale = numSizeBins/(sizeRange.y-sizeRange.x);
+    real scale = (real)numSizeBins/(sizeRange.y-sizeRange.x);
     for (unsigned int i = threadIdx.x+blockIdx.x*blockDim.x; i < NUM_BLOCKS; i += blockDim.x*gridDim.x) {
         real4 box = blockBoundingBox[i];
         real size = LOG(box.x+box.y+box.z);
@@ -162,7 +162,7 @@ extern "C" __global__ void sortBoxData(const unsigned int* __restrict__ sortedBl
     bool rebuild = forceRebuild;
     for (int i = threadIdx.x+blockIdx.x*blockDim.x; i < NUM_ATOMS; i += blockDim.x*gridDim.x) {
         real4 delta = oldPositions[i]-posq[i];
-        if (delta.x*delta.x + delta.y*delta.y + delta.z*delta.z > 0.25f*PADDING*PADDING)
+        if (delta.x*delta.x + delta.y*delta.y + delta.z*delta.z > (real)(0.25*PADDING*PADDING))
             rebuild = true;
     }
     if (rebuild) {
@@ -315,9 +315,9 @@ extern "C" __global__ __launch_bounds__(GROUP_SIZE,3) void findBlocksWithInterac
         int neighborsInBuffer = 0;
         real4 pos1 = posq[x*TILE_SIZE+indexInWarp];
 #ifdef USE_PERIODIC
-        const bool singlePeriodicCopy = (0.5f*periodicBoxSize.x-blockSizeX.x >= PADDED_CUTOFF &&
-                                         0.5f*periodicBoxSize.y-blockSizeX.y >= PADDED_CUTOFF &&
-                                         0.5f*periodicBoxSize.z-blockSizeX.z >= PADDED_CUTOFF);
+        const bool singlePeriodicCopy = ((real)0.5*periodicBoxSize.x-blockSizeX.x >= (real)PADDED_CUTOFF &&
+                                         (real)0.5*periodicBoxSize.y-blockSizeX.y >= (real)PADDED_CUTOFF &&
+                                         (real)0.5*periodicBoxSize.z-blockSizeX.z >= (real)PADDED_CUTOFF);
         if (singlePeriodicCopy) {
             // The box is small enough that we can just translate all the atoms into a single periodic
             // box, then skip having to apply periodic boundary conditions later.
@@ -325,7 +325,7 @@ extern "C" __global__ __launch_bounds__(GROUP_SIZE,3) void findBlocksWithInterac
             APPLY_PERIODIC_TO_POS_WITH_CENTER(pos1, blockCenterX)
         }
 #endif
-        pos1.w = 0.5f * (pos1.x * pos1.x + pos1.y * pos1.y + pos1.z * pos1.z);
+        pos1.w = (real)0.5 * (pos1.x * pos1.x + pos1.y * pos1.y + pos1.z * pos1.z);
         posBuffer[threadIdx.x] = pos1;
 
         // Load exclusion data for block x.
@@ -363,12 +363,12 @@ extern "C" __global__ __launch_bounds__(GROUP_SIZE,3) void findBlocksWithInterac
                     blockDelta.x = max(0.0f, fabs(blockDelta.x)-blockSizeX.x-largeSize.x);
                     blockDelta.y = max(0.0f, fabs(blockDelta.y)-blockSizeX.y-largeSize.y);
                     blockDelta.z = max(0.0f, fabs(blockDelta.z)-blockSizeX.z-largeSize.z);
-                    includeLargeBlock = (blockDelta.x*blockDelta.x+blockDelta.y*blockDelta.y+blockDelta.z*blockDelta.z < PADDED_CUTOFF_SQUARED);
+                    includeLargeBlock = (blockDelta.x*blockDelta.x+blockDelta.y*blockDelta.y+blockDelta.z*blockDelta.z < (real) PADDED_CUTOFF_SQUARED);
 #ifdef TRICLINIC
                     // The calculation to find the nearest periodic copy is only guaranteed to work if the nearest copy is less than half a box width away.
                     // If there's any possibility we might have missed it, do a detailed check.
 
-                    if (periodicBoxSize.z/2-blockSizeX.z-largeSize.z < PADDED_CUTOFF || periodicBoxSize.y/2-blockSizeX.y-largeSize.y < PADDED_CUTOFF)
+                    if (periodicBoxSize.z/2-blockSizeX.z-largeSize.z < (real)PADDED_CUTOFF || periodicBoxSize.y/2-blockSizeX.y-largeSize.y < (real)PADDED_CUTOFF)
                         includeLargeBlock = true;
 #endif
                 }
@@ -394,11 +394,11 @@ extern "C" __global__ __launch_bounds__(GROUP_SIZE,3) void findBlocksWithInterac
 #ifdef USE_PERIODIC
                 APPLY_PERIODIC_TO_DELTA(blockDelta)
 #endif
-                includeBlock2 &= (blockDelta.x*blockDelta.x+blockDelta.y*blockDelta.y+blockDelta.z*blockDelta.z < (PADDED_CUTOFF+blockCenterX.w+blockCenterY.w)*(PADDED_CUTOFF+blockCenterX.w+blockCenterY.w));
-                blockDelta.x = max(0.0f, fabs(blockDelta.x)-blockSizeX.x-blockSizeY.x);
-                blockDelta.y = max(0.0f, fabs(blockDelta.y)-blockSizeX.y-blockSizeY.y);
-                blockDelta.z = max(0.0f, fabs(blockDelta.z)-blockSizeX.z-blockSizeY.z);
-                includeBlock2 &= (blockDelta.x*blockDelta.x+blockDelta.y*blockDelta.y+blockDelta.z*blockDelta.z < PADDED_CUTOFF_SQUARED);
+                includeBlock2 &= (blockDelta.x*blockDelta.x+blockDelta.y*blockDelta.y+blockDelta.z*blockDelta.z < ((real)PADDED_CUTOFF+blockCenterX.w+blockCenterY.w)*((real)PADDED_CUTOFF+blockCenterX.w+blockCenterY.w));
+                blockDelta.x = max(0.0f, (double)((real)fabs(blockDelta.x)-blockSizeX.x-blockSizeY.x));
+                blockDelta.y = max(0.0f, (double)((real)fabs(blockDelta.y)-blockSizeX.y-blockSizeY.y));
+                blockDelta.z = max(0.0f, (double)((real)fabs(blockDelta.z)-blockSizeX.z-blockSizeY.z));
+                includeBlock2 &= (blockDelta.x*blockDelta.x+blockDelta.y*blockDelta.y+blockDelta.z*blockDelta.z < (real)PADDED_CUTOFF_SQUARED);
 #ifdef TRICLINIC
                 // The calculation to find the nearest periodic copy is only guaranteed to work if the nearest copy is less than half a box width away.
                 // If there's any possibility we might have missed it, do a detailed check.
@@ -433,14 +433,14 @@ extern "C" __global__ __launch_bounds__(GROUP_SIZE,3) void findBlocksWithInterac
                     APPLY_PERIODIC_TO_POS_WITH_CENTER(pos2, blockCenterX)
                 }
 #endif
-                pos2.w = 0.5f * (pos2.x * pos2.x + pos2.y * pos2.y + pos2.z * pos2.z);
+                pos2.w = (real)0.5 * (pos2.x * pos2.x + pos2.y * pos2.y + pos2.z * pos2.z);
 
                 real4 blockCenterY = sortedBlockCenter[block2Base+i];
                 real3 atomDelta = trimTo3(posBuffer[warpStart+indexInWarp])-trimTo3(blockCenterY);
 #ifdef USE_PERIODIC
                 APPLY_PERIODIC_TO_DELTA(atomDelta)
 #endif
-                int atomFlags = BALLOT(forceInclude || atomDelta.x*atomDelta.x+atomDelta.y*atomDelta.y+atomDelta.z*atomDelta.z < (PADDED_CUTOFF+blockCenterY.w)*(PADDED_CUTOFF+blockCenterY.w));
+                int atomFlags = BALLOT(forceInclude || atomDelta.x*atomDelta.x+atomDelta.y*atomDelta.y+atomDelta.z*atomDelta.z < ((real)PADDED_CUTOFF+blockCenterY.w)*((real)PADDED_CUTOFF+blockCenterY.w));
                 int interacts = 0;
                 if (atom2 < NUM_ATOMS && atomFlags != 0) {
 #ifdef USE_PERIODIC
@@ -450,7 +450,7 @@ extern "C" __global__ __launch_bounds__(GROUP_SIZE,3) void findBlocksWithInterac
                         for (int j = first; j < last; j++) {
                             real3 delta = trimTo3(pos2)-trimTo3(posBuffer[warpStart+j]);
                             APPLY_PERIODIC_TO_DELTA(delta)
-                            interacts |= (delta.x*delta.x+delta.y*delta.y+delta.z*delta.z < PADDED_CUTOFF_SQUARED ? 1<<j : 0);
+                            interacts |= (delta.x*delta.x+delta.y*delta.y+delta.z*delta.z < (real)PADDED_CUTOFF_SQUARED ? 1<<j : 0);
                         }
                     }
                     else {
@@ -459,7 +459,7 @@ extern "C" __global__ __launch_bounds__(GROUP_SIZE,3) void findBlocksWithInterac
                         for (int j = 0; j < 32; j++) {
                             real4 posj = posBuffer[warpStart+j];
                             real halfDist2 = posj.w + pos2.w - posj.x*pos2.x - posj.y*pos2.y - posj.z*pos2.z;
-                            interacts |= (halfDist2 < 0.5f * PADDED_CUTOFF_SQUARED ? 1<<j : 0);
+                            interacts |= (halfDist2 < (real)(0.5f * PADDED_CUTOFF_SQUARED) ? 1<<j : 0);
                         }
 #ifdef USE_PERIODIC
                     }

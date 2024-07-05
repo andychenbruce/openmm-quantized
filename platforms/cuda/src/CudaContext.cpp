@@ -356,14 +356,14 @@ CudaContext::CudaContext(const System& system, int deviceIndex, bool useBlocking
     if (boxIsTriclinic) {
         compilationDefines["APPLY_PERIODIC_TO_DELTA(delta)"] =
             "{"
-            "real scale3 = floor(delta.z*invPeriodicBoxSize.z+0.5f); \\\n"
+            "real scale3 = floor(delta.z*invPeriodicBoxSize.z+(real)0.5); \\\n"
             "delta.x -= scale3*periodicBoxVecZ.x; \\\n"
             "delta.y -= scale3*periodicBoxVecZ.y; \\\n"
             "delta.z -= scale3*periodicBoxVecZ.z; \\\n"
-            "real scale2 = floor(delta.y*invPeriodicBoxSize.y+0.5f); \\\n"
+            "real scale2 = floor(delta.y*invPeriodicBoxSize.y+(real)0.5); \\\n"
             "delta.x -= scale2*periodicBoxVecY.x; \\\n"
             "delta.y -= scale2*periodicBoxVecY.y; \\\n"
-            "real scale1 = floor(delta.x*invPeriodicBoxSize.x+0.5f); \\\n"
+            "real scale1 = floor(delta.x*invPeriodicBoxSize.x+(real)0.5); \\\n"
             "delta.x -= scale1*periodicBoxVecX.x;}";
         compilationDefines["APPLY_PERIODIC_TO_POS(pos)"] =
             "{"
@@ -391,19 +391,19 @@ CudaContext::CudaContext(const System& system, int deviceIndex, bool useBlocking
     else {
         compilationDefines["APPLY_PERIODIC_TO_DELTA(delta)"] =
             "{"
-            "delta.x -= floor(delta.x*invPeriodicBoxSize.x+0.5f)*periodicBoxSize.x; \\\n"
-            "delta.y -= floor(delta.y*invPeriodicBoxSize.y+0.5f)*periodicBoxSize.y; \\\n"
-            "delta.z -= floor(delta.z*invPeriodicBoxSize.z+0.5f)*periodicBoxSize.z;}";
+            "delta.x -= (real)floor(delta.x*invPeriodicBoxSize.x+(real)0.5)*periodicBoxSize.x; \\\n"
+            "delta.y -= (real)floor(delta.y*invPeriodicBoxSize.y+(real)0.5)*periodicBoxSize.y; \\\n"
+            "delta.z -= (real)floor(delta.z*invPeriodicBoxSize.z+(real)0.5)*periodicBoxSize.z;}";
         compilationDefines["APPLY_PERIODIC_TO_POS(pos)"] =
             "{"
-            "pos.x -= floor(pos.x*invPeriodicBoxSize.x)*periodicBoxSize.x; \\\n"
-            "pos.y -= floor(pos.y*invPeriodicBoxSize.y)*periodicBoxSize.y; \\\n"
-            "pos.z -= floor(pos.z*invPeriodicBoxSize.z)*periodicBoxSize.z;}";
+            "pos.x -= (real)floor(pos.x*invPeriodicBoxSize.x)*periodicBoxSize.x; \\\n"
+            "pos.y -= (real)floor(pos.y*invPeriodicBoxSize.y)*periodicBoxSize.y; \\\n"
+            "pos.z -= (real)floor(pos.z*invPeriodicBoxSize.z)*periodicBoxSize.z;}";
         compilationDefines["APPLY_PERIODIC_TO_POS_WITH_CENTER(pos, center)"] =
             "{"
-            "pos.x -= floor((pos.x-center.x)*invPeriodicBoxSize.x+0.5f)*periodicBoxSize.x; \\\n"
-            "pos.y -= floor((pos.y-center.y)*invPeriodicBoxSize.y+0.5f)*periodicBoxSize.y; \\\n"
-            "pos.z -= floor((pos.z-center.z)*invPeriodicBoxSize.z+0.5f)*periodicBoxSize.z;}";
+            "pos.x -= (real)floor((pos.x-center.x)*invPeriodicBoxSize.x+(real)0.5)*periodicBoxSize.x; \\\n"
+            "pos.y -= (real)floor((pos.y-center.y)*invPeriodicBoxSize.y+(real)0.5)*periodicBoxSize.y; \\\n"
+            "pos.z -= (real)floor((pos.z-center.z)*invPeriodicBoxSize.z+(real)0.5)*periodicBoxSize.z;}";
     }
 
     // Create utilities objects.
@@ -696,8 +696,8 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
     
     // Compile the program to PTX.
 
-    //optionsVec.push_back("--include-path=/data_18TB_2/andy/miniconda/targets/x86_64-linux/include/");
-    optionsVec.push_back("--include-path=/nix/store/v31dsr3swh1mcbv9cb7fzf8m4nna7sd3-home-manager-path/include/");
+    optionsVec.push_back("--include-path=/data_18TB_2/andy/miniconda/targets/x86_64-linux/include/");
+    //optionsVec.push_back("--include-path=/nix/store/v31dsr3swh1mcbv9cb7fzf8m4nna7sd3-home-manager-path/include/");
   
     nvrtcProgram program;
     CHECK_NVRTC_RESULT(nvrtcCreateProgram(&program, src.str().c_str(), NULL, 0, NULL, NULL), "Error creating program");
@@ -708,6 +708,7 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
             nvrtcGetProgramLogSize(program, &logSize);
             vector<char> log(logSize);
             nvrtcGetProgramLog(program, &log[0]);
+	    printf("poo = %s\n", src.str().c_str());
             throw OpenMMException("BRUHBRUH 123 Error compiling program: "+string(&log[0]));
         }
         size_t ptxSize;

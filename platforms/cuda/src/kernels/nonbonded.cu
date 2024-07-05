@@ -1,6 +1,10 @@
 #define WARPS_PER_GROUP (THREAD_BLOCK_SIZE/TILE_SIZE)
 
 //support for 64 bit shuffles
+static __inline__ __device__ half real_shfl(half var, int srcLane) {
+    return SHFL(var, srcLane);
+}
+
 static __inline__ __device__ float real_shfl(float var, int srcLane) {
     return SHFL(var, srcLane);
 }
@@ -31,11 +35,11 @@ static __inline__ __device__ long long real_shfl(long long var, int srcLane) {
  * Save the force on a single atom.
  */
 __device__ void saveSingleForce(int atom, real3 force, unsigned long long* forceBuffers) {
-    if (force.x != 0)
+    if (force.x != (real)0)
         atomicAdd(&forceBuffers[atom], static_cast<unsigned long long>(realToFixedPoint(force.x)));
-    if (force.y != 0)
+    if (force.y != (real)0)
         atomicAdd(&forceBuffers[atom+PADDED_NUM_ATOMS], static_cast<unsigned long long>(realToFixedPoint(force.y)));
-    if (force.z != 0)
+    if (force.z != (real)0)
         atomicAdd(&forceBuffers[atom+2*PADDED_NUM_ATOMS], static_cast<unsigned long long>(realToFixedPoint(force.z)));
 }
 
@@ -165,7 +169,7 @@ extern "C" __global__ void computeNonbonded(
                 real tempEnergy = 0.0f;
                 const real interactionScale = 0.5f;
                 COMPUTE_INTERACTION
-                energy += 0.5f*tempEnergy;
+                energy += (real)0.5*tempEnergy;
 #ifdef INCLUDE_FORCES
 #ifdef USE_SYMMETRIC
                 force.x -= delta.x*dEdR;

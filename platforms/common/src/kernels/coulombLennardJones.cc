@@ -86,9 +86,9 @@
     real sig2 = invR*sig;
     sig2 *= sig2;
     real sig6 = sig2*sig2*sig2;
-    real epssig6 = sig6*(SIGMA_EPSILON1.y*SIGMA_EPSILON2.y);
-    tempForce = epssig6*(12.0f*sig6 - 6.0f);
-    real ljEnergy = includeInteraction ? epssig6*(sig6 - 1) : 0;
+    real epssig6 = sig6*(real)(SIGMA_EPSILON1.y*SIGMA_EPSILON2.y);
+    tempForce = epssig6*((real)12.0*sig6 - (real)6.0);
+    real ljEnergy = includeInteraction ? epssig6*(sig6 - (real)1) : (real)0;
     #if USE_LJ_SWITCH
     if (r > LJ_SWITCH_CUTOFF) {
         real x = r-LJ_SWITCH_CUTOFF;
@@ -104,13 +104,13 @@
   #ifdef USE_CUTOFF
     const real prefactor = ONE_4PI_EPS0*CHARGE1*CHARGE2;
     tempForce += prefactor*(invR - 2.0f*REACTION_FIELD_K*r2);
-    tempEnergy += includeInteraction ? prefactor*(invR + REACTION_FIELD_K*r2 - REACTION_FIELD_C) : 0;
+    tempEnergy += includeInteraction ? prefactor*(invR + REACTION_FIELD_K*r2 - REACTION_FIELD_C) : (real)0;
   #else
     const real prefactor = ONE_4PI_EPS0*CHARGE1*CHARGE2*invR;
     tempForce += prefactor;
-    tempEnergy += includeInteraction ? prefactor : 0;
+    tempEnergy += includeInteraction ? prefactor : (real)0;
   #endif
 #endif
-    dEdR += includeInteraction ? tempForce*invR*invR : 0;
+    dEdR += includeInteraction ? tempForce*invR*invR : (real)0;
 #endif
 }
