@@ -28,6 +28,7 @@
   #define _USE_MATH_DEFINES // Needed to get M_PI
 #endif
 #include <cmath>
+#include <cuda_fp16.h>
 #include "CudaContext.h"
 #include "CudaArray.h"
 #include "CudaBondedUtilities.h"
@@ -75,6 +76,50 @@
         throw OpenMMException(m.str());\
     }
 
+std::string half_headers = R"AAA(
+//#define __CUDA_NO_HALF_OPERATORS__
+//#define __CUDA_NO_HALF_CONVERSIONS__
+#include <cuda_fp16.h>
+
+struct half3;
+struct half4;
+)AAA";
+
+std::string half_headers2 = R"AAA(
+
+struct half3 {
+public:
+    half x, y, z;
+};
+
+struct half4 {
+public:
+    half x, y, z, w;
+};
+
+__device__ half3 make_half3(half x, half y, half z)
+{
+  half3 t; t.x = x; t.y = y; t.z = z; return t;
+}
+
+__device__ half3 make_half3(half v)
+{
+  half3 t; t.x = v; t.y = v; t.z = v; return t;
+}
+
+__device__ half4 make_half4(half x, half y, half z, half w)
+{
+  half4 t; t.x = x; t.y = y; t.z = z; t.w = w; return t;
+}
+
+__device__ half4 make_half4(half v)
+{
+  half4 t; t.x = v; t.y = v; t.z = v; t.w = v; return t;
+}
+
+)AAA";
+    
+
 using namespace OpenMM;
 using namespace std;
 
@@ -92,16 +137,15 @@ CudaContext::CudaContext(const System& system, int deviceIndex, bool useBlocking
         hasInitializedCuda = true;
     }
     if (precision == "single") {
-        useDoublePrecision = false;
-        useMixedPrecision = false;
+        this->precision = PrecisionLevel::Single;
     }
     else if (precision == "mixed") {
-        useDoublePrecision = false;
-        useMixedPrecision = true;
+        this->precision = PrecisionLevel::Mixed;
     }
     else if (precision == "double") {
-        useDoublePrecision = true;
-        useMixedPrecision = false;
+        this->precision = PrecisionLevel::Double;
+    } else if (precision == "f16") {
+        this->precision = PrecisionLevel::F16;
     }
     else
         throw OpenMMException("Illegal value for Precision: "+precision);
@@ -215,38 +259,54 @@ CudaContext::CudaContext(const System& system, int deviceIndex, bool useBlocking
         compilationDefines["SHFL(var, srcLane)"] = "__shfl(var, srcLane);";
         compilationDefines["BALLOT(var)"] = "__ballot(var);";
     }
-    if (useDoublePrecision) {
-        posq.initialize<double4>(*this, paddedNumAtoms, "posq");
-        velm.initialize<double4>(*this, paddedNumAtoms, "velm");
-        compilationDefines["USE_DOUBLE_PRECISION"] = "1";
-        compilationDefines["make_real2"] = "make_double2";
-        compilationDefines["make_real3"] = "make_double3";
-        compilationDefines["make_real4"] = "make_double4";
-        compilationDefines["make_mixed2"] = "make_double2";
-        compilationDefines["make_mixed3"] = "make_double3";
-        compilationDefines["make_mixed4"] = "make_double4";
+    switch (this->precision) {
+    case PrecisionLevel::Double: {
+      posq.initialize<double4>(*this, paddedNumAtoms, "posq");
+      velm.initialize<double4>(*this, paddedNumAtoms, "velm");
+      compilationDefines["USE_DOUBLE_PRECISION"] = "1";
+      compilationDefines["make_real2"] = "make_double2";
+      compilationDefines["make_real3"] = "make_double3";
+      compilationDefines["make_real4"] = "make_double4";
+      compilationDefines["make_mixed2"] = "make_double2";
+      compilationDefines["make_mixed3"] = "make_double3";
+      compilationDefines["make_mixed4"] = "make_double4";
+      break;
     }
-    else if (useMixedPrecision) {
-        posq.initialize<float4>(*this, paddedNumAtoms, "posq");
-        posqCorrection.initialize<float4>(*this, paddedNumAtoms, "posqCorrection");
-        velm.initialize<double4>(*this, paddedNumAtoms, "velm");
-        compilationDefines["USE_MIXED_PRECISION"] = "1";
-        compilationDefines["make_real2"] = "make_float2";
-        compilationDefines["make_real3"] = "make_float3";
-        compilationDefines["make_real4"] = "make_float4";
-        compilationDefines["make_mixed2"] = "make_double2";
-        compilationDefines["make_mixed3"] = "make_double3";
-        compilationDefines["make_mixed4"] = "make_double4";
+    case PrecisionLevel::Mixed: {
+      posq.initialize<float4>(*this, paddedNumAtoms, "posq");
+      posqCorrection.initialize<float4>(*this, paddedNumAtoms, "posqCorrection");
+      velm.initialize<double4>(*this, paddedNumAtoms, "velm");
+      compilationDefines["USE_MIXED_PRECISION"] = "1";
+      compilationDefines["make_real2"] = "make_float2";
+      compilationDefines["make_real3"] = "make_float3";
+      compilationDefines["make_real4"] = "make_float4";
+      compilationDefines["make_mixed2"] = "make_double2";
+      compilationDefines["make_mixed3"] = "make_double3";
+      compilationDefines["make_mixed4"] = "make_double4";
+      break;
     }
-    else {
-        posq.initialize<float4>(*this, paddedNumAtoms, "posq");
-        velm.initialize<float4>(*this, paddedNumAtoms, "velm");
-        compilationDefines["make_real2"] = "make_float2";
-        compilationDefines["make_real3"] = "make_float3";
-        compilationDefines["make_real4"] = "make_float4";
-        compilationDefines["make_mixed2"] = "make_float2";
-        compilationDefines["make_mixed3"] = "make_float3";
-        compilationDefines["make_mixed4"] = "make_float4";
+    case PrecisionLevel::Single: {
+      posq.initialize<float4>(*this, paddedNumAtoms, "posq");
+      velm.initialize<float4>(*this, paddedNumAtoms, "velm");
+      compilationDefines["make_real2"] = "make_float2";
+      compilationDefines["make_real3"] = "make_float3";
+      compilationDefines["make_real4"] = "make_float4";
+      compilationDefines["make_mixed2"] = "make_float2";
+      compilationDefines["make_mixed3"] = "make_float3";
+      compilationDefines["make_mixed4"] = "make_float4";
+      break;
+    }
+    case PrecisionLevel::F16: {
+      posq.initialize<float4>(*this, paddedNumAtoms, "posq");
+      velm.initialize<float4>(*this, paddedNumAtoms, "velm");
+      compilationDefines["make_real2"] = "make_half2";
+      compilationDefines["make_real3"] = "make_half3";
+      compilationDefines["make_real4"] = "make_half4";
+      compilationDefines["make_mixed2"] = "make_half2";
+      compilationDefines["make_mixed3"] = "make_half3";
+      compilationDefines["make_mixed4"] = "make_half4";
+      break;
+    }
     }
     force.initialize<long long>(*this, paddedNumAtoms*3, "force");
     posCellOffsets.resize(paddedNumAtoms, mm_int4(0, 0, 0, 0));
@@ -270,20 +330,21 @@ CudaContext::CudaContext(const System& system, int deviceIndex, bool useBlocking
 
     // Set defines based on the requested precision.
 
-    compilationDefines["SQRT"] = useDoublePrecision ? "sqrt" : "sqrtf";
-    compilationDefines["RSQRT"] = useDoublePrecision ? "rsqrt" : "rsqrtf";
-    compilationDefines["RECIP"] = useDoublePrecision ? "1.0/" : "1.0f/";
-    compilationDefines["EXP"] = useDoublePrecision ? "exp" : "expf";
-    compilationDefines["LOG"] = useDoublePrecision ? "log" : "logf";
-    compilationDefines["POW"] = useDoublePrecision ? "pow" : "powf";
-    compilationDefines["COS"] = useDoublePrecision ? "cos" : "cosf";
-    compilationDefines["SIN"] = useDoublePrecision ? "sin" : "sinf";
-    compilationDefines["TAN"] = useDoublePrecision ? "tan" : "tanf";
-    compilationDefines["ACOS"] = useDoublePrecision ? "acos" : "acosf";
-    compilationDefines["ASIN"] = useDoublePrecision ? "asin" : "asinf";
-    compilationDefines["ATAN"] = useDoublePrecision ? "atan" : "atanf";
-    compilationDefines["ERF"] = useDoublePrecision ? "erf" : "erff";
-    compilationDefines["ERFC"] = useDoublePrecision ? "erfc" : "erfcf";
+    bool isDoublePrecision = (this->precision == PrecisionLevel::Double);
+    compilationDefines["SQRT"] = isDoublePrecision ? "sqrt" : "sqrtf";
+    compilationDefines["RSQRT"] = isDoublePrecision ? "rsqrt" : "rsqrtf";
+    compilationDefines["RECIP"] = isDoublePrecision ? "1.0/" : "1.0f/";
+    compilationDefines["EXP"] = isDoublePrecision ? "exp" : "expf";
+    compilationDefines["LOG"] = isDoublePrecision ? "log" : "logf";
+    compilationDefines["POW"] = isDoublePrecision ? "pow" : "powf";
+    compilationDefines["COS"] = isDoublePrecision ? "cos" : "cosf";
+    compilationDefines["SIN"] = isDoublePrecision ? "sin" : "sinf";
+    compilationDefines["TAN"] = isDoublePrecision ? "tan" : "tanf";
+    compilationDefines["ACOS"] = isDoublePrecision ? "acos" : "acosf";
+    compilationDefines["ASIN"] = isDoublePrecision ? "asin" : "asinf";
+    compilationDefines["ATAN"] = isDoublePrecision ? "atan" : "atanf";
+    compilationDefines["ERF"] = isDoublePrecision ? "erf" : "erff";
+    compilationDefines["ERFC"] = isDoublePrecision ? "erfc" : "erfcf";
 
     // Set defines for applying periodic boundary conditions.
 
@@ -295,14 +356,14 @@ CudaContext::CudaContext(const System& system, int deviceIndex, bool useBlocking
     if (boxIsTriclinic) {
         compilationDefines["APPLY_PERIODIC_TO_DELTA(delta)"] =
             "{"
-            "real scale3 = floor(delta.z*invPeriodicBoxSize.z+0.5f); \\\n"
+            "real scale3 = floor(delta.z*invPeriodicBoxSize.z+(real)0.5); \\\n"
             "delta.x -= scale3*periodicBoxVecZ.x; \\\n"
             "delta.y -= scale3*periodicBoxVecZ.y; \\\n"
             "delta.z -= scale3*periodicBoxVecZ.z; \\\n"
-            "real scale2 = floor(delta.y*invPeriodicBoxSize.y+0.5f); \\\n"
+            "real scale2 = floor(delta.y*invPeriodicBoxSize.y+(real)0.5); \\\n"
             "delta.x -= scale2*periodicBoxVecY.x; \\\n"
             "delta.y -= scale2*periodicBoxVecY.y; \\\n"
-            "real scale1 = floor(delta.x*invPeriodicBoxSize.x+0.5f); \\\n"
+            "real scale1 = floor(delta.x*invPeriodicBoxSize.x+(real)0.5); \\\n"
             "delta.x -= scale1*periodicBoxVecX.x;}";
         compilationDefines["APPLY_PERIODIC_TO_POS(pos)"] =
             "{"
@@ -330,19 +391,19 @@ CudaContext::CudaContext(const System& system, int deviceIndex, bool useBlocking
     else {
         compilationDefines["APPLY_PERIODIC_TO_DELTA(delta)"] =
             "{"
-            "delta.x -= floor(delta.x*invPeriodicBoxSize.x+0.5f)*periodicBoxSize.x; \\\n"
-            "delta.y -= floor(delta.y*invPeriodicBoxSize.y+0.5f)*periodicBoxSize.y; \\\n"
-            "delta.z -= floor(delta.z*invPeriodicBoxSize.z+0.5f)*periodicBoxSize.z;}";
+            "delta.x -= (real)floor(delta.x*invPeriodicBoxSize.x+(real)0.5)*periodicBoxSize.x; \\\n"
+            "delta.y -= (real)floor(delta.y*invPeriodicBoxSize.y+(real)0.5)*periodicBoxSize.y; \\\n"
+            "delta.z -= (real)floor(delta.z*invPeriodicBoxSize.z+(real)0.5)*periodicBoxSize.z;}";
         compilationDefines["APPLY_PERIODIC_TO_POS(pos)"] =
             "{"
-            "pos.x -= floor(pos.x*invPeriodicBoxSize.x)*periodicBoxSize.x; \\\n"
-            "pos.y -= floor(pos.y*invPeriodicBoxSize.y)*periodicBoxSize.y; \\\n"
-            "pos.z -= floor(pos.z*invPeriodicBoxSize.z)*periodicBoxSize.z;}";
+            "pos.x -= (real)floor(pos.x*invPeriodicBoxSize.x)*periodicBoxSize.x; \\\n"
+            "pos.y -= (real)floor(pos.y*invPeriodicBoxSize.y)*periodicBoxSize.y; \\\n"
+            "pos.z -= (real)floor(pos.z*invPeriodicBoxSize.z)*periodicBoxSize.z;}";
         compilationDefines["APPLY_PERIODIC_TO_POS_WITH_CENTER(pos, center)"] =
             "{"
-            "pos.x -= floor((pos.x-center.x)*invPeriodicBoxSize.x+0.5f)*periodicBoxSize.x; \\\n"
-            "pos.y -= floor((pos.y-center.y)*invPeriodicBoxSize.y+0.5f)*periodicBoxSize.y; \\\n"
-            "pos.z -= floor((pos.z-center.z)*invPeriodicBoxSize.z+0.5f)*periodicBoxSize.z;}";
+            "pos.x -= (real)floor((pos.x-center.x)*invPeriodicBoxSize.x+(real)0.5)*periodicBoxSize.x; \\\n"
+            "pos.y -= (real)floor((pos.y-center.y)*invPeriodicBoxSize.y+(real)0.5)*periodicBoxSize.y; \\\n"
+            "pos.z -= (real)floor((pos.z-center.z)*invPeriodicBoxSize.z+(real)0.5)*periodicBoxSize.z;}";
     }
 
     // Create utilities objects.
@@ -388,30 +449,57 @@ void CudaContext::initialize() {
     int numEnergyBuffers = max(numThreadBlocks*ThreadBlockSize, nonbonded->getNumEnergyBuffers());
     int multiprocessors;
     CHECK_RESULT2(cuDeviceGetAttribute(&multiprocessors, CU_DEVICE_ATTRIBUTE_MULTIPROCESSOR_COUNT, device), "Error checking GPU properties");
-    if (useDoublePrecision) {
-        energyBuffer.initialize<double>(*this, numEnergyBuffers, "energyBuffer");
-        energySum.initialize<double>(*this, multiprocessors, "energySum");
-        int pinnedBufferSize = max(paddedNumAtoms*4, numEnergyBuffers);
-        CHECK_RESULT(cuMemHostAlloc(&pinnedBuffer, pinnedBufferSize*sizeof(double), 0));
+    switch (precision) {
+    case PrecisionLevel::Double:{
+      energyBuffer.initialize<double>(*this, numEnergyBuffers, "energyBuffer");
+      energySum.initialize<double>(*this, multiprocessors, "energySum");
+      int pinnedBufferSize = max(paddedNumAtoms * 4, numEnergyBuffers);
+      CHECK_RESULT(cuMemHostAlloc(&pinnedBuffer, pinnedBufferSize*sizeof(double), 0));
+      break;
     }
-    else if (useMixedPrecision) {
-        energyBuffer.initialize<double>(*this, numEnergyBuffers, "energyBuffer");
-        energySum.initialize<double>(*this, multiprocessors, "energySum");
-        int pinnedBufferSize = max(paddedNumAtoms*4, numEnergyBuffers);
-        CHECK_RESULT(cuMemHostAlloc(&pinnedBuffer, pinnedBufferSize*sizeof(double), 0));
+    case PrecisionLevel::Mixed: {
+      energyBuffer.initialize<double>(*this, numEnergyBuffers, "energyBuffer");
+      energySum.initialize<double>(*this, multiprocessors, "energySum");
+      int pinnedBufferSize = max(paddedNumAtoms * 4, numEnergyBuffers);
+      CHECK_RESULT(cuMemHostAlloc(&pinnedBuffer,
+                                  pinnedBufferSize * sizeof(double), 0));
+      break;
     }
-    else {
-        energyBuffer.initialize<float>(*this, numEnergyBuffers, "energyBuffer");
-        energySum.initialize<float>(*this, multiprocessors, "energySum");
-        int pinnedBufferSize = max(paddedNumAtoms*6, numEnergyBuffers);
-        CHECK_RESULT(cuMemHostAlloc(&pinnedBuffer, pinnedBufferSize*sizeof(float), 0));
+    case PrecisionLevel::Single: {
+      energyBuffer.initialize<float>(*this, numEnergyBuffers, "energyBuffer");
+      energySum.initialize<float>(*this, multiprocessors, "energySum");
+      int pinnedBufferSize = max(paddedNumAtoms * 6, numEnergyBuffers);
+      CHECK_RESULT(cuMemHostAlloc(&pinnedBuffer, pinnedBufferSize*sizeof(float), 0));
+      break;
+    }
+    case PrecisionLevel::F16: {//??? what to put here
+      energyBuffer.initialize<half>(*this, numEnergyBuffers, "energyBuffer");
+      energySum.initialize<half>(*this, multiprocessors, "energySum");
+      int pinnedBufferSize = max(paddedNumAtoms*8, numEnergyBuffers);
+      CHECK_RESULT(cuMemHostAlloc(&pinnedBuffer, pinnedBufferSize*sizeof(half), 0));
+      break;
+    }
     }
     for (int i = 0; i < numAtoms; i++) {
-        double mass = system.getParticleMass(i);
-        if (useDoublePrecision || useMixedPrecision)
-            ((double4*) pinnedBuffer)[i] = make_double4(0.0, 0.0, 0.0, mass == 0.0 ? 0.0 : 1.0/mass);
-        else
-            ((float4*) pinnedBuffer)[i] = make_float4(0.0f, 0.0f, 0.0f, mass == 0.0 ? 0.0f : (float) (1.0/mass));
+      double mass = system.getParticleMass(i);
+      switch (precision) {
+      case PrecisionLevel::Double:
+      case PrecisionLevel::Mixed:
+        ((double4 *)pinnedBuffer)[i] =
+          make_double4(0.0, 0.0, 0.0, mass == 0.0 ? 0.0 : 1.0 / mass);
+        break;
+      case PrecisionLevel::Single:
+        ((float4 *)pinnedBuffer)[i] =
+          make_float4(0.0f, 0.0f, 0.0f, mass == 0.0 ? 0.0f : (float)(1.0 / mass));
+        break;
+      case PrecisionLevel::F16:
+        half2 first(0.0f, 0.0f);
+        half2 second(0.0f, mass == 0.0 ? (half)0.0 : (half)(1.0 / mass));
+        ((half2 *)pinnedBuffer)[2 * i] = first;
+        ((half2 *)pinnedBuffer)[(2*i) + 1] = second;
+	
+        break;
+      }
     }
     velm.upload(pinnedBuffer);
     bonded->initialize(system);
@@ -419,10 +507,18 @@ void CudaContext::initialize() {
     addAutoclearBuffer(energyBuffer.getDevicePointer(), energyBuffer.getSize()*energyBuffer.getElementSize());
     int numEnergyParamDerivs = energyParamDerivNames.size();
     if (numEnergyParamDerivs > 0) {
-        if (useDoublePrecision || useMixedPrecision)
+      switch (precision) {
+      case PrecisionLevel::Double:
+      case PrecisionLevel::Mixed:
             energyParamDerivBuffer.initialize<double>(*this, numEnergyParamDerivs*numEnergyBuffers, "energyParamDerivBuffer");
-        else
-            energyParamDerivBuffer.initialize<float>(*this, numEnergyParamDerivs*numEnergyBuffers, "energyParamDerivBuffer");
+        break;
+      case PrecisionLevel::Single:
+        energyParamDerivBuffer.initialize<float>(*this, numEnergyParamDerivs * numEnergyBuffers, "energyParamDerivBuffer");
+        break;
+      case PrecisionLevel::F16:
+        energyParamDerivBuffer.initialize<half>(*this, numEnergyParamDerivs * numEnergyBuffers, "energyParamDerivBuffer");
+        break;
+      }
         addAutoclearBuffer(energyParamDerivBuffer);
     }
     findMoleculeGroups();
@@ -469,31 +565,64 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
         }
     }
     if (!compilationDefines.empty())
-        src << endl;
-    if (useDoublePrecision) {
-        src << "typedef double real;\n";
+      src << endl;
+
+    src << half_headers << endl;
+
+    switch (precision) {
+      case PrecisionLevel::Double : {
+	src << "typedef double real;\n";
         src << "typedef double2 real2;\n";
         src << "typedef double3 real3;\n";
         src << "typedef double4 real4;\n";
-    }
-    else {
-        src << "typedef float real;\n";
+	break;
+      }
+    case PrecisionLevel::Mixed:
+    case PrecisionLevel::Single:
+      {
+	src << "typedef float real;\n";
         src << "typedef float2 real2;\n";
         src << "typedef float3 real3;\n";
         src << "typedef float4 real4;\n";
+        break;
+      }
+    case PrecisionLevel::F16:
+      {
+	src << "typedef half real;\n";
+        src << "typedef half2 real2;\n";
+        src << "typedef half3 real3;\n";
+        src << "typedef half4 real4;\n";
+        break;
+      }
     }
-    if (useDoublePrecision || useMixedPrecision) {
-        src << "typedef double mixed;\n";
-        src << "typedef double2 mixed2;\n";
-        src << "typedef double3 mixed3;\n";
-        src << "typedef double4 mixed4;\n";
+  
+    switch (precision) {
+    case PrecisionLevel::Double : {
+    case PrecisionLevel::Mixed:
+      src << "typedef double mixed;\n";
+      src << "typedef double2 mixed2;\n";
+      src << "typedef double3 mixed3;\n";
+      src << "typedef double4 mixed4;\n";
+      break;
     }
-    else {
-        src << "typedef float mixed;\n";
-        src << "typedef float2 mixed2;\n";
-        src << "typedef float3 mixed3;\n";
-        src << "typedef float4 mixed4;\n";
+    case PrecisionLevel::Single: {
+      src << "typedef float mixed;\n";
+      src << "typedef float2 mixed2;\n";
+      src << "typedef float3 mixed3;\n";
+      src << "typedef float4 mixed4;\n";
+      break;
     }
+    case PrecisionLevel::F16: {
+      src << "typedef half mixed;\n";
+      src << "typedef half2 mixed2;\n";
+      src << "typedef half3 mixed3;\n";
+      src << "typedef half4 mixed4;\n";
+      break;
+    }
+    }
+
+    src << half_headers2 << endl;
+
     src << "typedef unsigned int tileflags;\n";
     src << CudaKernelSources::common << endl;
     for (auto& pair : defines) {
@@ -565,6 +694,8 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
     
     // Compile the program to PTX.
     
+    optionsVec.push_back("--include-path=/nix/store/3p28x6dzmyfbs7sdnnh3d2wrqvqdccdx-cuda-merged-12.2/include/");//todo don't hard code this
+  
     nvrtcProgram program;
     CHECK_NVRTC_RESULT(nvrtcCreateProgram(&program, src.str().c_str(), NULL, 0, NULL, NULL), "Error creating program");
     try {
@@ -792,7 +923,7 @@ double CudaContext::reduceEnergy() {
 
 void CudaContext::setCharges(const vector<double>& charges) {
     if (!chargeBuffer.isInitialized())
-        chargeBuffer.initialize(*this, numAtoms, useDoublePrecision ? sizeof(double) : sizeof(float), "chargeBuffer");
+      chargeBuffer.initialize(*this, numAtoms, getUseDoublePrecision() ? sizeof(double) : sizeof(float), "chargeBuffer");
     vector<double> c(numAtoms);
     for (int i = 0; i < numAtoms; i++)
         c[i] = charges[i];
@@ -835,7 +966,7 @@ vector<int> CudaContext::getDevicePrecedence() {
         if (major == 1 && minor < 2)
             continue;
 
-        if ((useDoublePrecision || useMixedPrecision) && (major+0.1*minor < 1.3))
+        if ((getUseDoublePrecision() || getUseMixedPrecision()) && (major+0.1*minor < 1.3))
             continue;
 
         CHECK_RESULT(cuDeviceGetAttribute(&clock, CU_DEVICE_ATTRIBUTE_CLOCK_RATE, thisDevice));
