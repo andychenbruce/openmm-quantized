@@ -15,24 +15,25 @@
           config = { allowUnfree = true; };
         };
       in 
-      stdenv.mkDerivation {
-        nativeBuildInputs = [ pkgs.cmake ];
-        buildInputs = [
-          pkgs.python312
-          pkgs.python312Packages.cython
-          pkgs.doxygen
-          pkgs.swig
-          pkgs.gnumake
-          pkgs.cudatoolkit
-          pkgs.clang
-          pkgs.clang-tools
-          pkgs.lldb
-        ];
-        name = "hello";
-        src = self;
-        # configurePhase = "cmake -B .";
-        # buildPhase = "cmake --build . --parallel $NIX_BUILD_CORES";
-        # installPhase = "mkdir -p $out/bin; install -t $out/bin hello";
-      };
+        stdenvNoCC.mkDerivation {
+          nativeBuildInputs = [
+            pkgs.cmake
+            pkgs.clang-tools
+            pkgs.python312
+            pkgs.python312Packages.cython
+            pkgs.doxygen
+            pkgs.swig
+            pkgs.gnumake
+            pkgs.cudatoolkit
+            #pkgs.cudaPackages.cuda_opencl
+            pkgs.opencl-clhpp
+            pkgs.ocl-icd
+            pkgs.clang
+            pkgs.lldb
+          ];
+          #buildInputs = [];
+          name = "hello";
+          src = self;
+        };
   };
 }

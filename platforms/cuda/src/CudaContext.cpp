@@ -696,8 +696,8 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
     
     // Compile the program to PTX.
 
-    optionsVec.push_back("--include-path=/data_18TB_2/andy/miniconda/targets/x86_64-linux/include/");
-    //optionsVec.push_back("--include-path=/nix/store/v31dsr3swh1mcbv9cb7fzf8m4nna7sd3-home-manager-path/include/");
+    //optionsVec.push_back("--include-path=/data_18TB_2/andy/miniconda/targets/x86_64-linux/include/");
+    optionsVec.push_back("--include-path=/nix/store/3p28x6dzmyfbs7sdnnh3d2wrqvqdccdx-cuda-merged-12.2/include/");
   
     nvrtcProgram program;
     CHECK_NVRTC_RESULT(nvrtcCreateProgram(&program, src.str().c_str(), NULL, 0, NULL, NULL), "Error creating program");
