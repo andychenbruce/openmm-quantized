@@ -2,5 +2,8 @@ __pycache__
 build
 build?
 
+# clangd
+.cache
+
 # macOS
 .DS_Store
