@@ -115,7 +115,7 @@ KERNEL void selectVerletStepSize(int numAtoms, int paddedNumAtoms, mixed maxStep
         mixed newStepSize = SQRT(errorTol/totalError);
         mixed oldStepSize = dt[0].y;
         if (oldStepSize > (mixed)0.0)
-            newStepSize = (half)min((float)newStepSize, (float)(oldStepSize*(mixed)2.0)); // For safety, limit how quickly dt can increase.
+            newStepSize = (mixed)min((float)newStepSize, (float)(oldStepSize*(mixed)2.0)); // For safety, limit how quickly dt can increase.
         if (newStepSize > oldStepSize && newStepSize < (mixed)1.1*oldStepSize)
             newStepSize = oldStepSize; // Keeping dt constant between steps improves the behavior of the integrator.
         if (newStepSize > maxStepSize)
