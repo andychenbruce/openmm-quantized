@@ -16,6 +16,10 @@ inline __device__ int4 make_int4(int a) {
     return make_int4(a, a, a, a);
 }
 
+inline __device__ half2 make_half2(half a) {
+    return make_half2(a, a);
+}
+
 inline __device__ float2 make_float2(float a) {
     return make_float2(a, a);
 }
@@ -52,6 +56,14 @@ inline __device__ int3 operator-(int3 a) {
 
 inline __device__ int4 operator-(int4 a) {
     return make_int4(-a.x, -a.y, -a.z, -a.w);
+}
+
+inline __device__ half3 operator-(half3 a) {
+    return make_half3(-a.x, -a.y, -a.z);
+}
+
+inline __device__ half4 operator-(half4 a) {
+    return make_half4(-a.x, -a.y, -a.z, -a.w);
 }
 
 inline __device__ float2 operator-(float2 a) {
@@ -92,6 +104,14 @@ inline __device__ int4 operator+(int4 a, int4 b) {
     return make_int4(a.x+b.x, a.y+b.y, a.z+b.z, a.w+b.w);
 }
 
+inline __device__ half3 operator+(half3 a, half3 b) {
+    return make_half3(a.x+b.x, a.y+b.y, a.z+b.z);
+}
+
+inline __device__ half4 operator+(half4 a, half4 b) {
+    return make_half4(a.x+b.x, a.y+b.y, a.z+b.z, a.w+b.w);
+}
+
 inline __device__ float2 operator+(float2 a, float2 b) {
     return make_float2(a.x+b.x, a.y+b.y);
 }
@@ -130,6 +150,14 @@ inline __device__ int4 operator-(int4 a, int4 b) {
     return make_int4(a.x-b.x, a.y-b.y, a.z-b.z, a.w-b.w);
 }
 
+inline __device__ half3 operator-(half3 a, half3 b) {
+    return make_half3(a.x-b.x, a.y-b.y, a.z-b.z);
+}
+
+inline __device__ half4 operator-(half4 a, half4 b) {
+    return make_half4(a.x-b.x, a.y-b.y, a.z-b.z, a.w-b.w);
+}
+
 inline __device__ float2 operator-(float2 a, float2 b) {
     return make_float2(a.x-b.x, a.y-b.y);
 }
@@ -166,6 +194,14 @@ inline __device__ int3 operator*(int3 a, int3 b) {
 
 inline __device__ int4 operator*(int4 a, int4 b) {
     return make_int4(a.x*b.x, a.y*b.y, a.z*b.z, a.w*b.w);
+}
+
+inline __device__ half3 operator*(half3 a, half3 b) {
+    return make_half3(a.x*b.x, a.y*b.y, a.z*b.z);
+}
+
+inline __device__ half4 operator*(half4 a, half4 b) {
+    return make_half4(a.x*b.x, a.y*b.y, a.z*b.z, a.w*b.w);
 }
 
 inline __device__ float2 operator*(float2 a, float2 b) {
@@ -244,6 +280,14 @@ inline __device__ void operator+=(int4& a, int4 b) {
     a.x += b.x; a.y += b.y; a.z += b.z; a.w += b.w;
 }
 
+inline __device__ void operator+=(half3& a, half3 b) {
+    a.x += b.x; a.y += b.y; a.z += b.z;
+}
+
+inline __device__ void operator+=(half4& a, half4 b) {
+    a.x += b.x; a.y += b.y; a.z += b.z; a.w += b.w;
+}
+
 inline __device__ void operator+=(float2& a, float2 b) {
     a.x += b.x; a.y += b.y;
 }
@@ -317,6 +361,14 @@ inline __device__ void operator*=(int3& a, int3 b) {
 }
 
 inline __device__ void operator*=(int4& a, int4 b) {
+    a.x *= b.x; a.y *= b.y; a.z *= b.z; a.w *= b.w;
+}
+
+inline __device__ void operator*=(half3& a, half3 b) {
+    a.x *= b.x; a.y *= b.y; a.z *= b.z;
+}
+
+inline __device__ void operator*=(half4& a, half4 b) {
     a.x *= b.x; a.y *= b.y; a.z *= b.z; a.w *= b.w;
 }
 
@@ -408,6 +460,30 @@ inline __device__ int4 operator*(int a, int4 b) {
     return make_int4(a*b.x, a*b.y, a*b.z, a*b.w);
 }
 
+inline __device__ half2 operator*(half2 a, half b) {
+    return make_half2(a.x*b, a.y*b);
+}
+
+inline __device__ half3 operator*(half3 a, half b) {
+    return make_half3(a.x*b, a.y*b, a.z*b);
+}
+
+inline __device__ half4 operator*(half4 a, half b) {
+    return make_half4(a.x*b, a.y*b, a.z*b, a.w*b);
+}
+
+inline __device__ half2 operator*(half a, half2 b) {
+    return make_half2(a*b.x, a*b.y);
+}
+
+inline __device__ half3 operator*(half a, half3 b) {
+    return make_half3(a*b.x, a*b.y, a*b.z);
+}
+
+inline __device__ half4 operator*(half a, half4 b) {
+    return make_half4(a*b.x, a*b.y, a*b.z, a*b.w);
+}
+
 inline __device__ float2 operator*(float2 a, float b) {
     return make_float2(a.x*b, a.y*b);
 }
@@ -470,6 +546,16 @@ inline __device__ int4 operator/(int4 a, int b) {
     return make_int4(a.x/b, a.y/b, a.z/b, a.w/b);
 }
 
+inline __device__ half3 operator/(half3 a, half b) {
+    half scale = (half)1.0/b;
+    return a*scale;
+}
+
+inline __device__ half4 operator/(half4 a, half b) {
+    half scale = (half)1.0/b;
+    return a*scale;
+}
+
 inline __device__ float2 operator/(float2 a, float b) {
     float scale = 1.0f/b;
     return a*scale;
@@ -514,6 +600,14 @@ inline __device__ void operator*=(int4& a, int b) {
     a.x *= b; a.y *= b; a.z *= b; a.w *= b;
 }
 
+inline __device__ void operator*=(half3& a, half b) {
+    a.x *= b; a.y *= b; a.z *= b;
+}
+
+inline __device__ void operator*=(half4& a, half b) {
+    a.x *= b; a.y *= b; a.z *= b; a.w *= b;
+}
+
 inline __device__ void operator*=(float2& a, float b) {
     a.x *= b; a.y *= b;
 }
@@ -549,6 +643,14 @@ inline __device__ double dot(double3 a, double3 b) {
 }
 
 // Cross product
+
+inline __device__ half3 cross(half3 a, half3 b) {
+    return make_half3(a.y*b.z-a.z*b.y, a.z*b.x-a.x*b.z, a.x*b.y-a.y*b.x);
+}
+
+inline __device__ half4 cross(half4 a, half4 b) {
+    return make_half4(a.y*b.z-a.z*b.y, a.z*b.x-a.x*b.z, a.x*b.y-a.y*b.x, 0.0f);
+}
 
 inline __device__ float3 cross(float3 a, float3 b) {
     return make_float3(a.y*b.z-a.z*b.y, a.z*b.x-a.x*b.z, a.x*b.y-a.y*b.x);
@@ -600,6 +702,10 @@ inline __device__ short3 trimTo3(short4 v) {
 
 inline __device__ int3 trimTo3(int4 v) {
     return make_int3(v.x, v.y, v.z);
+}
+
+inline __device__ half3 trimTo3(half4 v) {
+    return make_half3(v.x, v.y, v.z);
 }
 
 inline __device__ float3 trimTo3(float4 v) {

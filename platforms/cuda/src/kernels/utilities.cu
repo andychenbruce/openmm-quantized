@@ -79,7 +79,7 @@ __global__ void clearSixBuffers(int* __restrict__ buffer1, int size1, int* __res
 __global__ void reduceEnergy(const mixed* __restrict__ energyBuffer, mixed* __restrict__ result, int bufferSize, int workGroupSize) {
     extern __shared__ mixed tempBuffer[];
     const unsigned int thread = threadIdx.x;
-    mixed sum = 0;
+    mixed sum = 0.0;
     for (unsigned int index = blockDim.x*blockIdx.x+threadIdx.x; index < bufferSize; index += blockDim.x*gridDim.x)
         sum += energyBuffer[index];
     tempBuffer[thread] = sum;

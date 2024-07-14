@@ -85,6 +85,6 @@ KERNEL void computeExclusionParameters(GLOBAL real4* RESTRICT posq, GLOBAL real*
         float sigma = 0;
         float epsilon = 0;
 #endif
-        exclusionParams[i] = make_float4((float) (ONE_4PI_EPS0*chargeProd), sigma, epsilon, 0);
+        exclusionParams[i] = make_float4((float) (ONE_4PI_EPS0*(float)chargeProd), sigma, epsilon, 0);
     }
 }

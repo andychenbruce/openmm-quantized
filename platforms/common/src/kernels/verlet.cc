@@ -10,11 +10,11 @@ KERNEL void integrateVerletPart1(int numAtoms, int paddedNumAtoms, GLOBAL const 
     ) {
     const mixed2 stepSize = dt[0];
     const mixed dtPos = stepSize.y;
-    const mixed dtVel = 0.5f*(stepSize.x+stepSize.y);
-    const mixed scale = dtVel/(mixed) 0x100000000;
+    const mixed dtVel = (mixed)0.5*(stepSize.x+stepSize.y);
+    const mixed scale = dtVel/(mixed) (long long) 0x100000000;
     for (int index = GLOBAL_ID; index < numAtoms; index += GLOBAL_SIZE) {
         mixed4 velocity = velm[index];
-        if (velocity.w != 0.0) {
+        if (velocity.w != (mixed)0.0) {
 #ifdef USE_MIXED_PRECISION
             real4 pos1 = posq[index];
             real4 pos2 = posqCorrection[index];
@@ -22,9 +22,9 @@ KERNEL void integrateVerletPart1(int numAtoms, int paddedNumAtoms, GLOBAL const 
 #else
             real4 pos = posq[index];
 #endif
-            velocity.x += scale*force[index]*velocity.w;
-            velocity.y += scale*force[index+paddedNumAtoms]*velocity.w;
-            velocity.z += scale*force[index+paddedNumAtoms*2]*velocity.w;
+            velocity.x += scale*(mixed)force[index]*velocity.w;
+            velocity.y += scale*(mixed)force[index+paddedNumAtoms]*velocity.w;
+            velocity.z += scale*(mixed)force[index+paddedNumAtoms*2]*velocity.w;
             pos.x = velocity.x*dtPos;
             pos.y = velocity.y*dtPos;
             pos.z = velocity.z*dtPos;
@@ -46,9 +46,9 @@ KERNEL void integrateVerletPart2(int numAtoms, GLOBAL mixed2* RESTRICT dt, GLOBA
     ) {
     mixed2 stepSize = dt[0];
 #ifdef SUPPORTS_DOUBLE_PRECISION
-    double oneOverDt = 1.0/stepSize.y;
+    double oneOverDt = 1.0/(double)stepSize.y;
 #else
-    float oneOverDt = 1.0f/stepSize.y;
+    float oneOverDt = 1.0f/(float)stepSize.y;
     float correction = (1.0f-oneOverDt*stepSize.y)/stepSize.y;
 #endif
     if (GLOBAL_ID == 0)
@@ -57,7 +57,7 @@ KERNEL void integrateVerletPart2(int numAtoms, GLOBAL mixed2* RESTRICT dt, GLOBA
     int index = GLOBAL_ID;
     for (; index < numAtoms; index += GLOBAL_SIZE) {
         mixed4 velocity = velm[index];
-        if (velocity.w != 0.0) {
+        if (velocity.w != (mixed)0.0) {
 #ifdef USE_MIXED_PRECISION
             real4 pos1 = posq[index];
             real4 pos2 = posqCorrection[index];
@@ -70,7 +70,7 @@ KERNEL void integrateVerletPart2(int numAtoms, GLOBAL mixed2* RESTRICT dt, GLOBA
             pos.y += delta.y;
             pos.z += delta.z;
 #ifdef SUPPORTS_DOUBLE_PRECISION
-            velocity = make_mixed4((mixed) (delta.x*oneOverDt), (mixed) (delta.y*oneOverDt), (mixed) (delta.z*oneOverDt), velocity.w);
+            velocity = make_mixed4((mixed) ((float)delta.x*oneOverDt), (mixed) ((float)delta.y*oneOverDt), (mixed) ((float)delta.z*oneOverDt), velocity.w);
 #else
             velocity = make_mixed4((mixed) (delta.x*oneOverDt+delta.x*correction), (mixed) (delta.y*oneOverDt+delta.y*correction), (mixed) (delta.z*oneOverDt+delta.z*correction), velocity.w);
 #endif
@@ -94,9 +94,9 @@ KERNEL void selectVerletStepSize(int numAtoms, int paddedNumAtoms, mixed maxStep
 
     LOCAL mixed error[256];
     mixed err = 0;
-    const mixed scale = RECIP((mixed) 0x100000000);
+    const mixed scale = RECIP((float) 0x100000000);
     for (int index = LOCAL_ID; index < numAtoms; index += LOCAL_SIZE) {
-        mixed3 f = make_mixed3(scale*force[index], scale*force[index+paddedNumAtoms], scale*force[index+paddedNumAtoms*2]);
+        mixed3 f = make_mixed3(scale*(mixed)force[index], scale*(mixed)force[index+paddedNumAtoms], scale*(mixed)force[index+paddedNumAtoms*2]);
         mixed invMass = velm[index].w;
         err += (f.x*f.x + f.y*f.y + f.z*f.z)*invMass*invMass;
     }
@@ -111,12 +111,12 @@ KERNEL void selectVerletStepSize(int numAtoms, int paddedNumAtoms, mixed maxStep
         SYNC_THREADS;
     }
     if (LOCAL_ID == 0) {
-        mixed totalError = SQRT(error[0]/(numAtoms*3));
+        mixed totalError = SQRT(error[0]/(mixed)(numAtoms*3));
         mixed newStepSize = SQRT(errorTol/totalError);
         mixed oldStepSize = dt[0].y;
-        if (oldStepSize > 0.0f)
-            newStepSize = min(newStepSize, oldStepSize*2.0f); // For safety, limit how quickly dt can increase.
-        if (newStepSize > oldStepSize && newStepSize < 1.1f*oldStepSize)
+        if (oldStepSize > (mixed)0.0)
+            newStepSize = (half)min((float)newStepSize, (float)(oldStepSize*(mixed)2.0)); // For safety, limit how quickly dt can increase.
+        if (newStepSize > oldStepSize && newStepSize < (mixed)1.1*oldStepSize)
             newStepSize = oldStepSize; // Keeping dt constant between steps improves the behavior of the integrator.
         if (newStepSize > maxStepSize)
             newStepSize = maxStepSize;
