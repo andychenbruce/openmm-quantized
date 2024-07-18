@@ -400,12 +400,34 @@ public:
     }
 
     int getNonMixedElementSize() const {
-      assert(false && "TODO");
-      return -1;
+      switch(precision){
+      case PrecisionLevel::Double: {
+	return sizeof(double);
+      }
+      case PrecisionLevel::Mixed:
+      case PrecisionLevel::Single:{
+	return sizeof(float);
+      }
+      case PrecisionLevel::F16:{
+	return sizeof(half);
+      }
+      }
+      
     }
     int getMixedElementSize() const {
-      assert(false && "TODO");
-      return -1;
+      switch(precision){
+      case PrecisionLevel::Double:
+      case PrecisionLevel::Mixed:{
+	return sizeof(double);
+      }
+      
+      case PrecisionLevel::Single:{
+	return sizeof(float);
+      }
+      case PrecisionLevel::F16:{
+	return sizeof(half);
+      }
+      }
     }
   
     /**
