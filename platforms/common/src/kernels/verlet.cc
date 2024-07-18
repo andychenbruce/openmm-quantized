@@ -1,7 +1,6 @@
 /**
  * Perform the first step of Verlet integration.
  */
-
 KERNEL void integrateVerletPart1(int numAtoms, int paddedNumAtoms, GLOBAL const mixed2* RESTRICT dt, GLOBAL const real4* RESTRICT posq,
         GLOBAL mixed4* RESTRICT velm, GLOBAL const mm_long* RESTRICT force, GLOBAL mixed4* RESTRICT posDelta
 #ifdef USE_MIXED_PRECISION
@@ -9,7 +8,7 @@ KERNEL void integrateVerletPart1(int numAtoms, int paddedNumAtoms, GLOBAL const 
 #endif
 				 ) {
   for(int i = GLOBAL_ID; i < numAtoms; i += GLOBAL_SIZE){
-    printf("BEFORE %d is = %d, %d, %d, %d\n", i, posq[i].x, posq[i].y, posq[i].z, posq[i].w);
+    printf("BEFORE %d is = %f, %f, %f, %f\n", i, (double)posq[i].x, (double)posq[i].y, (double)posq[i].z, (double)posq[i].w);
   }
 
   
@@ -91,7 +90,7 @@ KERNEL void integrateVerletPart2(int numAtoms, GLOBAL mixed2* RESTRICT dt, GLOBA
     }
 
     for(int i = GLOBAL_ID; i < numAtoms; i += GLOBAL_SIZE){
-      printf("AFTER %d is = %d, %d, %d, %d\n", i, posq[i].x, posq[i].y, posq[i].z, posq[i].w);
+      printf("AFTER %d is = %f, %f, %f, %f\n", i, (double)posq[i].x, (double)posq[i].y, (double)posq[i].z, (double)posq[i].w);
     }
 }
 

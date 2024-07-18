@@ -698,15 +698,20 @@ CUmodule CudaContext::createModule(const string source, const map<string, string
   
     nvrtcProgram program;
     CHECK_NVRTC_RESULT(nvrtcCreateProgram(&program, src.str().c_str(), NULL, 0, NULL, NULL), "Error creating program");
+    //exit(12);
     try {
         nvrtcResult result = nvrtcCompileProgram(program, optionsVec.size(), &optionsVec[0]);
+	size_t logSize;
+	nvrtcGetProgramLogSize(program, &logSize);
+	vector<char> log(logSize);
+	nvrtcGetProgramLog(program, &log[0]);
+      
         if (result != NVRTC_SUCCESS) {
-            size_t logSize;
-            nvrtcGetProgramLogSize(program, &logSize);
-            vector<char> log(logSize);
-            nvrtcGetProgramLog(program, &log[0]);
-            throw OpenMMException("Error compiling program: "+string(&log[0]));
+          //throw OpenMMException("Error compiling program: "+string(&log[0]));
         }
+        fprintf(stderr, "LOG STUFF = %s\n", log.data());
+      
+      
         size_t ptxSize;
         nvrtcGetPTXSize(program, &ptxSize);
         vector<char> ptx(ptxSize);
