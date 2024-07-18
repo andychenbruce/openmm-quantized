@@ -63,20 +63,30 @@ using namespace std;
 static void setPeriodicBoxArgs(ComputeContext& cc, ComputeKernel kernel, int index) {
     Vec3 a, b, c;
     cc.getPeriodicBoxVectors(a, b, c);
-    if (cc.getUseDoublePrecision()) {
-        kernel->setArg(index++, mm_double4(a[0], b[1], c[2], 0.0));
-        kernel->setArg(index++, mm_double4(1.0/a[0], 1.0/b[1], 1.0/c[2], 0.0));
-        kernel->setArg(index++, mm_double4(a[0], a[1], a[2], 0.0));
-        kernel->setArg(index++, mm_double4(b[0], b[1], b[2], 0.0));
-        kernel->setArg(index, mm_double4(c[0], c[1], c[2], 0.0));
+  
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double: {
+      kernel->setArg(index++, mm_double4(a[0], b[1], c[2], 0.0));
+      kernel->setArg(index++, mm_double4(1.0/a[0], 1.0/b[1], 1.0/c[2], 0.0));
+      kernel->setArg(index++, mm_double4(a[0], a[1], a[2], 0.0));
+      kernel->setArg(index++, mm_double4(b[0], b[1], b[2], 0.0));
+      kernel->setArg(index, mm_double4(c[0], c[1], c[2], 0.0));
+      break;
     }
-    else {
-        kernel->setArg(index++, mm_float4((float) a[0], (float) b[1], (float) c[2], 0.0f));
-        kernel->setArg(index++, mm_float4(1.0f/(float) a[0], 1.0f/(float) b[1], 1.0f/(float) c[2], 0.0f));
-        kernel->setArg(index++, mm_float4((float) a[0], (float) a[1], (float) a[2], 0.0f));
-        kernel->setArg(index++, mm_float4((float) b[0], (float) b[1], (float) b[2], 0.0f));
-        kernel->setArg(index, mm_float4((float) c[0], (float) c[1], (float) c[2], 0.0f));
+    case PrecisionLevel::Mixed:
+    case PrecisionLevel::Single:{
+      kernel->setArg(index++, mm_float4((float) a[0], (float) b[1], (float) c[2], 0.0f));
+      kernel->setArg(index++, mm_float4(1.0f/(float) a[0], 1.0f/(float) b[1], 1.0f/(float) c[2], 0.0f));
+      kernel->setArg(index++, mm_float4((float) a[0], (float) a[1], (float) a[2], 0.0f));
+      kernel->setArg(index++, mm_float4((float) b[0], (float) b[1], (float) b[2], 0.0f));
+      kernel->setArg(index, mm_float4((float) c[0], (float) c[1], (float) c[2], 0.0f));
+      break;
     }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
+    }
+
 }
 
 /* -------------------------------------------------------------------------- *
@@ -93,7 +103,7 @@ void CudaCalcAmoebaMultipoleForceKernel::initialize(const System& system, const 
     CommonCalcAmoebaMultipoleForceKernel::initialize(system, force);
     if (usePME) {
         ContextSelector selector(cc);
-        cufftResult result = cufftPlan3d(&fft, gridSizeX, gridSizeY, gridSizeZ, cc.getUseDoublePrecision() ? CUFFT_Z2Z : CUFFT_C2C);
+        cufftResult result = cufftPlan3d(&fft, gridSizeX, gridSizeY, gridSizeZ, (cc.getPrecision() == PrecisionLevel::Double) ? CUFFT_Z2Z : CUFFT_C2C);
         if (result != CUFFT_SUCCESS)
             throw OpenMMException("Error initializing FFT: "+cc.intToString(result));
         hasInitializedFFT = true;
@@ -104,16 +114,36 @@ void CudaCalcAmoebaMultipoleForceKernel::computeFFT(bool forward) {
     CudaArray& grid1 = dynamic_cast<CudaContext&>(cc).unwrap(pmeGrid1);
     CudaArray& grid2 = dynamic_cast<CudaContext&>(cc).unwrap(pmeGrid2);
     if (forward) {
-        if (cc.getUseDoublePrecision())
-            cufftExecZ2Z(fft, (double2*) grid1.getDevicePointer(), (double2*) grid2.getDevicePointer(), CUFFT_FORWARD);
-        else
-            cufftExecC2C(fft, (float2*) grid1.getDevicePointer(), (float2*) grid2.getDevicePointer(), CUFFT_FORWARD);
+      switch(cc.getPrecision()){
+      case PrecisionLevel::Double: {
+	cufftExecZ2Z(fft, (double2*) grid1.getDevicePointer(), (double2*) grid2.getDevicePointer(), CUFFT_FORWARD);
+	break;
+      }
+      case PrecisionLevel::Mixed:
+      case PrecisionLevel::Single:{
+	cufftExecC2C(fft, (float2*) grid1.getDevicePointer(), (float2*) grid2.getDevicePointer(), CUFFT_FORWARD);
+	break;
+      }
+      case PrecisionLevel::F16:{
+	assert(false && "TODO");
+      }
+      }
     }
     else {
-        if (cc.getUseDoublePrecision())
-            cufftExecZ2Z(fft, (double2*) grid2.getDevicePointer(), (double2*) grid1.getDevicePointer(), CUFFT_INVERSE);
-        else
-            cufftExecC2C(fft, (float2*) grid2.getDevicePointer(), (float2*) grid1.getDevicePointer(), CUFFT_INVERSE);
+      switch(cc.getPrecision()){
+      case PrecisionLevel::Double: {
+	cufftExecZ2Z(fft, (double2*) grid2.getDevicePointer(), (double2*) grid1.getDevicePointer(), CUFFT_INVERSE);
+	break;
+      }
+      case PrecisionLevel::Mixed:
+      case PrecisionLevel::Single:{
+	cufftExecC2C(fft, (float2*) grid2.getDevicePointer(), (float2*) grid1.getDevicePointer(), CUFFT_INVERSE);
+	break;
+      }
+      case PrecisionLevel::F16:{
+	assert(false && "TODO");
+      }
+      }
     }
 }
 
@@ -139,16 +169,16 @@ void CudaCalcHippoNonbondedForceKernel::initialize(const System& system, const H
         ContextSelector selector(cc);
         CudaContext& cu = dynamic_cast<CudaContext&>(cc);
         sort = new CudaSort(cu, new SortTrait(), cc.getNumAtoms());
-        cufftResult result = cufftPlan3d(&fftForward, gridSizeX, gridSizeY, gridSizeZ, cc.getUseDoublePrecision() ? CUFFT_D2Z : CUFFT_R2C);
+        cufftResult result = cufftPlan3d(&fftForward, gridSizeX, gridSizeY, gridSizeZ, (cc.getPrecision() == PrecisionLevel::Double) ? CUFFT_D2Z : CUFFT_R2C);
         if (result != CUFFT_SUCCESS)
             throw OpenMMException("Error initializing FFT: "+cc.intToString(result));
-        result = cufftPlan3d(&fftBackward, gridSizeX, gridSizeY, gridSizeZ, cc.getUseDoublePrecision() ? CUFFT_Z2D : CUFFT_C2R);
+        result = cufftPlan3d(&fftBackward, gridSizeX, gridSizeY, gridSizeZ, (cc.getPrecision() == PrecisionLevel::Double) ? CUFFT_Z2D : CUFFT_C2R);
         if (result != CUFFT_SUCCESS)
             throw OpenMMException("Error initializing FFT: "+cc.intToString(result));
-        result = cufftPlan3d(&dfftForward, dispersionGridSizeX, dispersionGridSizeY, dispersionGridSizeZ, cc.getUseDoublePrecision() ? CUFFT_D2Z : CUFFT_R2C);
+        result = cufftPlan3d(&dfftForward, dispersionGridSizeX, dispersionGridSizeY, dispersionGridSizeZ, (cc.getPrecision() == PrecisionLevel::Double) ? CUFFT_D2Z : CUFFT_R2C);
         if (result != CUFFT_SUCCESS)
             throw OpenMMException("Error initializing FFT: "+cc.intToString(result));
-        result = cufftPlan3d(&dfftBackward, dispersionGridSizeX, dispersionGridSizeY, dispersionGridSizeZ, cc.getUseDoublePrecision() ? CUFFT_Z2D : CUFFT_C2R);
+        result = cufftPlan3d(&dfftBackward, dispersionGridSizeX, dispersionGridSizeY, dispersionGridSizeZ, (cc.getPrecision() == PrecisionLevel::Double) ? CUFFT_Z2D : CUFFT_C2R);
         if (result != CUFFT_SUCCESS)
             throw OpenMMException("Error initializing FFT: "+cc.intToString(result));
         hasInitializedFFT = true;
@@ -159,18 +189,40 @@ void CudaCalcHippoNonbondedForceKernel::computeFFT(bool forward, bool dispersion
     CudaArray& grid1 = dynamic_cast<CudaContext&>(cc).unwrap(pmeGrid1);
     CudaArray& grid2 = dynamic_cast<CudaContext&>(cc).unwrap(pmeGrid2);
     if (forward) {
-        cufftHandle fft = dispersion ? dfftForward : fftForward;
-        if (cc.getUseDoublePrecision())
-            cufftExecD2Z(fft, (double*) grid1.getDevicePointer(), (double2*) grid2.getDevicePointer());
-        else
-            cufftExecR2C(fft, (float*) grid1.getDevicePointer(), (float2*) grid2.getDevicePointer());
+      cufftHandle fft = dispersion ? dfftForward : fftForward;
+      switch(cc.getPrecision()){
+      case PrecisionLevel::Double: {
+	cufftExecD2Z(fft, (double*) grid1.getDevicePointer(), (double2*) grid2.getDevicePointer());
+	break;
+      }
+      case PrecisionLevel::Mixed:
+      case PrecisionLevel::Single:{
+	cufftExecR2C(fft, (float*) grid1.getDevicePointer(), (float2*) grid2.getDevicePointer());
+	break;
+      }
+      case PrecisionLevel::F16:{
+	assert(false && "TODO");
+      }
+      }
     }
     else {
-        cufftHandle fft = dispersion ? dfftBackward : fftBackward;
-        if (cc.getUseDoublePrecision())
-            cufftExecZ2D(fft, (double2*) grid2.getDevicePointer(), (double*) grid1.getDevicePointer());
-        else
-            cufftExecC2R(fft, (float2*) grid2.getDevicePointer(), (float*) grid1.getDevicePointer());
+      cufftHandle fft = dispersion ? dfftBackward : fftBackward;
+      
+      switch(cc.getPrecision()){
+      case PrecisionLevel::Double: {
+	cufftExecZ2D(fft, (double2*) grid2.getDevicePointer(), (double*) grid1.getDevicePointer());
+	break;
+      }
+      case PrecisionLevel::Mixed:
+      case PrecisionLevel::Single:{
+	cufftExecC2R(fft, (float2*) grid2.getDevicePointer(), (float*) grid1.getDevicePointer());
+	break;
+      }
+      case PrecisionLevel::F16:{
+	assert(false && "TODO");
+      }
+      }
+
     }
 }
 

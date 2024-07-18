@@ -7,7 +7,12 @@ KERNEL void integrateVerletPart1(int numAtoms, int paddedNumAtoms, GLOBAL const 
 #ifdef USE_MIXED_PRECISION
         , GLOBAL const real4* RESTRICT posqCorrection
 #endif
-    ) {
+				 ) {
+  for(int i = GLOBAL_ID; i < numAtoms; i += GLOBAL_SIZE){
+    printf("BEFORE %d is = %d, %d, %d, %d\n", i, posq[i].x, posq[i].y, posq[i].z, posq[i].w);
+  }
+
+  
     const mixed2 stepSize = dt[0];
     const mixed dtPos = stepSize.y;
     const mixed dtVel = (mixed)0.5*(stepSize.x+stepSize.y);
@@ -82,6 +87,11 @@ KERNEL void integrateVerletPart2(int numAtoms, GLOBAL mixed2* RESTRICT dt, GLOBA
 #endif
             velm[index] = velocity;
         }
+
+    }
+
+    for(int i = GLOBAL_ID; i < numAtoms; i += GLOBAL_SIZE){
+      printf("AFTER %d is = %d, %d, %d, %d\n", i, posq[i].x, posq[i].y, posq[i].z, posq[i].w);
     }
 }
 

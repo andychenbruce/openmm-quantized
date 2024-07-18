@@ -192,19 +192,37 @@ void BondedUtilities::computeInteractions(int groups) {
     kernel->setArg(3, groups);
     Vec3 a, b, c;
     context.getPeriodicBoxVectors(a, b, c);
-    if (context.getUseDoublePrecision()) {
-        kernel->setArg(4, mm_double4(a[0], b[1], c[2], 0.0));
+    switch(context.getPrecision()){
+    case PrecisionLevel::Double:
+      {
+      kernel->setArg(4, mm_double4(a[0], b[1], c[2], 0.0));
         kernel->setArg(5, mm_double4(1.0/a[0], 1.0/b[1], 1.0/c[2], 0.0));
         kernel->setArg(6, mm_double4(a[0], a[1], a[2], 0.0));
         kernel->setArg(7, mm_double4(b[0], b[1], b[2], 0.0));
         kernel->setArg(8, mm_double4(c[0], c[1], c[2], 0.0));
-    }
-    else {
-        kernel->setArg(4, mm_float4((float) a[0], (float) b[1], (float) c[2], 0.0f));
+	break;
+      }
+    case PrecisionLevel::Mixed:
+    case PrecisionLevel::Single:
+      {
+	kernel->setArg(4, mm_float4((float) a[0], (float) b[1], (float) c[2], 0.0f));
         kernel->setArg(5, mm_float4(1.0f/(float) a[0], 1.0f/(float) b[1], 1.0f/(float) c[2], 0.0f));
         kernel->setArg(6, mm_float4((float) a[0], (float) a[1], (float) a[2], 0.0f));
         kernel->setArg(7, mm_float4((float) b[0], (float) b[1], (float) b[2], 0.0f));
         kernel->setArg(8, mm_float4((float) c[0], (float) c[1], (float) c[2], 0.0f));
+	break;
+      }
+      case PrecisionLevel::F16:
+	{
+	  assert(false && "TODO");
+	  // kernel->setArg(4, mm_half4((half) a[0], (half) b[1], (half) c[2], 0.0f));
+          // kernel->setArg(5, mm_half4((half)1.0/(half) a[0], (half)1.0/(half) b[1], (half)1.0/(half) c[2], 0.0f));
+          // kernel->setArg(6, mm_half4((half) a[0], (half) a[1], (half) a[2], 0.0f));
+          // kernel->setArg(7, mm_half4((half) b[0], (half) b[1], (half) b[2], 0.0f));
+          // kernel->setArg(8, mm_half4((half) c[0], (half) c[1], (half) c[2], 0.0f));
+	  break;
+	}
+      
     }
     kernel->execute(maxBonds);
 }

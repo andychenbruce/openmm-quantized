@@ -25,6 +25,7 @@
  * -------------------------------------------------------------------------- */
 
 #include "openmm/common/CommonKernels.h"
+#include "openmm/common/ComputeContext.h"
 #include "openmm/common/ContextSelector.h"
 #include "openmm/common/ExpressionUtilities.h"
 #include "openmm/Context.h"
@@ -58,7 +59,7 @@ using namespace Lepton;
 static void setPeriodicBoxArgs(ComputeContext& cc, ComputeKernel kernel, int index) {
     Vec3 a, b, c;
     cc.getPeriodicBoxVectors(a, b, c);
-    if (cc.getUseDoublePrecision()) {
+    if(cc.getPrecision() == PrecisionLevel::Double) {
         kernel->setArg(index++, mm_double4(a[0], b[1], c[2], 0.0));
         kernel->setArg(index++, mm_double4(1.0/a[0], 1.0/b[1], 1.0/c[2], 0.0));
         kernel->setArg(index++, mm_double4(a[0], a[1], a[2], 0.0));
@@ -138,20 +139,25 @@ void CommonUpdateStateDataKernel::getPositions(ContextImpl& context, vector<Vec3
     int numParticles = context.getSystem().getNumParticles();
     positions.resize(numParticles);
     vector<mm_float4> posCorrection;
-    if (cc.getUseDoublePrecision()) {
+    if (cc.getPrecision() == PrecisionLevel::Double) {
         mm_double4* posq = (mm_double4*) cc.getPinnedBuffer();
         cc.getPosq().download(posq);
     }
-    else if (cc.getUseMixedPrecision()) {
+    else if (cc.getPrecision() == PrecisionLevel::Mixed) {
         mm_float4* posq = (mm_float4*) cc.getPinnedBuffer();
         cc.getPosq().download(posq, false);
         posCorrection.resize(numParticles);
         cc.getPosqCorrection().download(posCorrection);
     }
-    else {
+    else if (cc.getPrecision() == PrecisionLevel::Single) {
         mm_float4* posq = (mm_float4*) cc.getPinnedBuffer();
         cc.getPosq().download(posq);
     }
+    else if (cc.getPrecision() == PrecisionLevel::F16) {
+      mm_half4* posq = (mm_half4*) cc.getPinnedBuffer();
+      cc.getPosq().download(posq);
+    }
+  
     
     // Filling in the output array is done in parallel for speed.
     
@@ -165,15 +171,17 @@ void CommonUpdateStateDataKernel::getPositions(ContextImpl& context, vector<Vec3
         int numThreads = threads.getNumThreads();
         int start = threadIndex*numParticles/numThreads;
         int end = (threadIndex+1)*numParticles/numThreads;
-        if (cc.getUseDoublePrecision()) {
+	switch(cc.getPrecision()){
+        case PrecisionLevel::Double: {
             mm_double4* posq = (mm_double4*) cc.getPinnedBuffer();
             for (int i = start; i < end; ++i) {
                 mm_double4 pos = posq[i];
                 mm_int4 offset = cc.getPosCellOffsets()[i];
                 positions[order[i]] = Vec3(pos.x, pos.y, pos.z)-boxVectors[0]*offset.x-boxVectors[1]*offset.y-boxVectors[2]*offset.z;
             }
+	    break;
         }
-        else if (cc.getUseMixedPrecision()) {
+        case PrecisionLevel::Mixed: {
             mm_float4* posq = (mm_float4*) cc.getPinnedBuffer();
             for (int i = start; i < end; ++i) {
                 mm_float4 pos1 = posq[i];
@@ -181,15 +189,27 @@ void CommonUpdateStateDataKernel::getPositions(ContextImpl& context, vector<Vec3
                 mm_int4 offset = cc.getPosCellOffsets()[i];
                 positions[order[i]] = Vec3((double)pos1.x+(double)pos2.x, (double)pos1.y+(double)pos2.y, (double)pos1.z+(double)pos2.z)-boxVectors[0]*offset.x-boxVectors[1]*offset.y-boxVectors[2]*offset.z;
             }
+	    break;
         }
-        else {
+        case PrecisionLevel::Single: {
             mm_float4* posq = (mm_float4*) cc.getPinnedBuffer();
             for (int i = start; i < end; ++i) {
                 mm_float4 pos = posq[i];
                 mm_int4 offset = cc.getPosCellOffsets()[i];
                 positions[order[i]] = Vec3(pos.x, pos.y, pos.z)-boxVectors[0]*offset.x-boxVectors[1]*offset.y-boxVectors[2]*offset.z;
             }
+	    break;
         }
+	case PrecisionLevel::F16: {
+	    mm_half4* posq = (mm_half4*) cc.getPinnedBuffer();
+            for (int i = start; i < end; ++i) {
+              mm_half4 pos = posq[i];
+              mm_int4 offset = cc.getPosCellOffsets()[i];
+              positions[order[i]] = Vec3(pos.x, pos.y, pos.z)-boxVectors[0]*offset.x-boxVectors[1]*offset.y-boxVectors[2]*offset.z;
+            }
+	    break;
+	}
+	}
     });
     cc.getThreadPool().waitForThreads();
 }
@@ -198,7 +218,7 @@ void CommonUpdateStateDataKernel::setPositions(ContextImpl& context, const vecto
     ContextSelector selector(cc);
     const vector<int>& order = cc.getAtomIndex();
     int numParticles = context.getSystem().getNumParticles();
-    if (cc.getUseDoublePrecision()) {
+    if (cc.getPrecision() == PrecisionLevel::Double) {
         mm_double4* posq = (mm_double4*) cc.getPinnedBuffer();
         cc.getPosq().download(posq);
         for (int i = 0; i < numParticles; ++i) {
@@ -208,11 +228,12 @@ void CommonUpdateStateDataKernel::setPositions(ContextImpl& context, const vecto
             pos.y = p[1];
             pos.z = p[2];
         }
-        for (int i = numParticles; i < cc.getPaddedNumAtoms(); i++)
+        for (int i = numParticles; i < cc.getPaddedNumAtoms(); i++)//HEREHERHERHERHERH -- ANDY
             posq[i] = mm_double4(0.0, 0.0, 0.0, 0.0);
         cc.getPosq().upload(posq);
     }
-    else {
+    else if((cc.getPrecision() == PrecisionLevel::Mixed)
+	    || (cc.getPrecision() == PrecisionLevel::Single)){
         mm_float4* posq = (mm_float4*) cc.getPinnedBuffer();
         cc.getPosq().download(posq);
         for (int i = 0; i < numParticles; ++i) {
@@ -225,8 +246,21 @@ void CommonUpdateStateDataKernel::setPositions(ContextImpl& context, const vecto
         for (int i = numParticles; i < cc.getPaddedNumAtoms(); i++)
             posq[i] = mm_float4(0.0f, 0.0f, 0.0f, 0.0f);
         cc.getPosq().upload(posq);
+    }else if(cc.getPrecision() == PrecisionLevel::F16){
+      mm_half4* posq = (mm_half4*) cc.getPinnedBuffer();
+      cc.getPosq().download(posq);
+      for (int i = 0; i < numParticles; ++i) {
+        mm_half4& pos = posq[i];
+        const Vec3& p = positions[order[i]];
+        pos.x = (half) p[0];
+        pos.y = (half) p[1];
+        pos.z = (half) p[2];
+      }
+      for (int i = numParticles; i < cc.getPaddedNumAtoms(); i++)
+        posq[i] = mm_half4(0.0f, 0.0f, 0.0f, 0.0f);
+      cc.getPosq().upload(posq);
     }
-    if (cc.getUseMixedPrecision()) {
+    if (cc.getPrecision() == PrecisionLevel::Mixed) {
         mm_float4* posCorrection = (mm_float4*) cc.getPinnedBuffer();
         for (int i = 0; i < numParticles; ++i) {
             mm_float4& c = posCorrection[i];
@@ -250,7 +284,8 @@ void CommonUpdateStateDataKernel::getVelocities(ContextImpl& context, vector<Vec
     const vector<int>& order = cc.getAtomIndex();
     int numParticles = context.getSystem().getNumParticles();
     velocities.resize(numParticles);
-    if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
+    if ((cc.getPrecision() == PrecisionLevel::Double)
+	     || (cc.getPrecision() == PrecisionLevel::Mixed)){
         mm_double4* velm = (mm_double4*) cc.getPinnedBuffer();
         cc.getVelm().download(velm);
         for (int i = 0; i < numParticles; ++i) {
@@ -258,7 +293,7 @@ void CommonUpdateStateDataKernel::getVelocities(ContextImpl& context, vector<Vec
             velocities[order[i]] = Vec3(vel.x, vel.y, vel.z);
         }
     }
-    else {
+    else if(cc.getPrecision() == PrecisionLevel::Single) {
         mm_float4* velm = (mm_float4*) cc.getPinnedBuffer();
         cc.getVelm().download(velm);
         for (int i = 0; i < numParticles; ++i) {
@@ -266,13 +301,23 @@ void CommonUpdateStateDataKernel::getVelocities(ContextImpl& context, vector<Vec
             velocities[order[i]] = Vec3(vel.x, vel.y, vel.z);
         }
     }
+    else if(cc.getPrecision() == PrecisionLevel::F16) {
+        mm_half4* velm = (mm_half4*) cc.getPinnedBuffer();
+        cc.getVelm().download(velm);
+        for (int i = 0; i < numParticles; ++i) {
+            mm_half4 vel = velm[i];
+            velocities[order[i]] = Vec3(vel.x, vel.y, vel.z);
+        }
+    }
+    
 }
 
 void CommonUpdateStateDataKernel::setVelocities(ContextImpl& context, const vector<Vec3>& velocities) {
     ContextSelector selector(cc);
     const vector<int>& order = cc.getAtomIndex();
     int numParticles = context.getSystem().getNumParticles();
-    if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
+    if ((cc.getPrecision() == PrecisionLevel::Double)
+	     || (cc.getPrecision() == PrecisionLevel::Mixed)){
         mm_double4* velm = (mm_double4*) cc.getPinnedBuffer();
         cc.getVelm().download(velm);
         for (int i = 0; i < numParticles; ++i) {
@@ -286,7 +331,7 @@ void CommonUpdateStateDataKernel::setVelocities(ContextImpl& context, const vect
             velm[i] = mm_double4(0.0, 0.0, 0.0, 0.0);
         cc.getVelm().upload(velm);
     }
-    else {
+    else if(cc.getPrecision() == PrecisionLevel::Single) {
         mm_float4* velm = (mm_float4*) cc.getPinnedBuffer();
         cc.getVelm().download(velm);
         for (int i = 0; i < numParticles; ++i) {
@@ -298,6 +343,20 @@ void CommonUpdateStateDataKernel::setVelocities(ContextImpl& context, const vect
         }
         for (int i = numParticles; i < cc.getPaddedNumAtoms(); i++)
             velm[i] = mm_float4(0.0f, 0.0f, 0.0f, 0.0f);
+        cc.getVelm().upload(velm);
+    }
+    else if(cc.getPrecision() == PrecisionLevel::F16) {
+        mm_half4* velm = (mm_half4*) cc.getPinnedBuffer();
+        cc.getVelm().download(velm);
+        for (int i = 0; i < numParticles; ++i) {
+            mm_half4& vel = velm[i];
+            const Vec3& p = velocities[order[i]];
+            vel.x = p[0];
+            vel.y = p[1];
+            vel.z = p[2];
+        }
+        for (int i = numParticles; i < cc.getPaddedNumAtoms(); i++)
+            velm[i] = mm_half4(0.0f, 0.0f, 0.0f, 0.0f);
         cc.getVelm().upload(velm);
     }
 }
@@ -327,7 +386,8 @@ void CommonUpdateStateDataKernel::getEnergyParameterDerivatives(ContextImpl& con
         return;
     derivs = cc.getEnergyParamDerivWorkspace();
     ArrayInterface& derivArray = cc.getEnergyParamDerivBuffer();
-    if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
+    if ((cc.getPrecision() == PrecisionLevel::Double)
+	     || (cc.getPrecision() == PrecisionLevel::Mixed)){
         vector<double> derivBuffers;
         derivArray.download(derivBuffers);
         for (int i = numDerivs; i < derivArray.getSize(); i += numDerivs)
@@ -336,7 +396,7 @@ void CommonUpdateStateDataKernel::getEnergyParameterDerivatives(ContextImpl& con
         for (int i = 0; i < numDerivs; i++)
             derivs[paramDerivNames[i]] += derivBuffers[i];
     }
-    else {
+    else if(cc.getPrecision() == PrecisionLevel::Single) {
         vector<float> derivBuffers;
         derivArray.download(derivBuffers);
         for (int i = numDerivs; i < derivArray.getSize(); i += numDerivs)
@@ -344,6 +404,15 @@ void CommonUpdateStateDataKernel::getEnergyParameterDerivatives(ContextImpl& con
                 derivBuffers[j] += derivBuffers[i+j];
         for (int i = 0; i < numDerivs; i++)
             derivs[paramDerivNames[i]] += derivBuffers[i];
+    }
+    else if(cc.getPrecision() == PrecisionLevel::F16) {
+        vector<half> derivBuffers;
+        derivArray.download(derivBuffers);
+        for (int i = numDerivs; i < derivArray.getSize(); i += numDerivs)
+            for (int j = 0; j < numDerivs; j++)
+                derivBuffers[j] += derivBuffers[i+j];
+        for (int i = 0; i < numDerivs; i++)
+            derivs[paramDerivNames[i]] += (double)derivBuffers[i];
     }
 }
 
@@ -375,7 +444,7 @@ void CommonUpdateStateDataKernel::createCheckpoint(ContextImpl& context, ostream
     ContextSelector selector(cc);
     int version = 3;
     stream.write((char*) &version, sizeof(int));
-    int precision = (cc.getUseDoublePrecision() ? 2 : cc.getUseMixedPrecision() ? 1 : 0);
+    int precision = ((cc.getPrecision() == PrecisionLevel::Double) ? 2 : (cc.getPrecision() == PrecisionLevel::Mixed) ? 1 : 0);
     stream.write((char*) &precision, sizeof(int));
     double time = cc.getTime();
     stream.write((char*) &time, sizeof(double));
@@ -386,7 +455,7 @@ void CommonUpdateStateDataKernel::createCheckpoint(ContextImpl& context, ostream
     char* buffer = (char*) cc.getPinnedBuffer();
     cc.getPosq().download(buffer);
     stream.write(buffer, cc.getPosq().getSize()*cc.getPosq().getElementSize());
-    if (cc.getUseMixedPrecision()) {
+    if (cc.getPrecision() == PrecisionLevel::Mixed) {
         cc.getPosqCorrection().download(buffer);
         stream.write(buffer, cc.getPosqCorrection().getSize()*cc.getPosqCorrection().getElementSize());
     }
@@ -409,7 +478,7 @@ void CommonUpdateStateDataKernel::loadCheckpoint(ContextImpl& context, istream& 
         throw OpenMMException("Checkpoint was created with a different version of OpenMM");
     int precision;
     stream.read((char*) &precision, sizeof(int));
-    int expectedPrecision = (cc.getUseDoublePrecision() ? 2 : cc.getUseMixedPrecision() ? 1 : 0);
+    int expectedPrecision = ((cc.getPrecision() == PrecisionLevel::Double) ? 2 : (cc.getPrecision() == PrecisionLevel::Mixed) ? 1 : 0);
     if (precision != expectedPrecision)
         throw OpenMMException("Checkpoint was created with a different numeric precision");
     double time;
@@ -427,7 +496,7 @@ void CommonUpdateStateDataKernel::loadCheckpoint(ContextImpl& context, istream& 
     char* buffer = (char*) cc.getPinnedBuffer();
     stream.read(buffer, cc.getPosq().getSize()*cc.getPosq().getElementSize());
     cc.getPosq().upload(buffer);
-    if (cc.getUseMixedPrecision()) {
+    if (cc.getPrecision() == PrecisionLevel::Mixed) {
         stream.read(buffer, cc.getPosqCorrection().getSize()*cc.getPosqCorrection().getElementSize());
         cc.getPosqCorrection().upload(buffer);
     }
@@ -460,7 +529,7 @@ void CommonApplyConstraintsKernel::apply(ContextImpl& context, double tol) {
         applyDeltasKernel->addArg(cc.getNumAtoms());
         applyDeltasKernel->addArg(cc.getPosq());
         applyDeltasKernel->addArg(cc.getIntegrationUtilities().getPosDelta());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             applyDeltasKernel->addArg(cc.getPosqCorrection());
     }
     IntegrationUtilities& integration = cc.getIntegrationUtilities();
@@ -1570,7 +1639,7 @@ void CommonCalcCustomCompoundBondForceKernel::initialize(const System& system, c
         return;
     int particlesPerBond = force.getNumParticlesPerBond();
     vector<vector<int> > atoms(numBonds, vector<int>(particlesPerBond));
-    params = new ComputeParameterSet(cc, force.getNumPerBondParameters(), numBonds, "customCompoundBondParams", false, cc.getUseDoublePrecision());
+    params = new ComputeParameterSet(cc, force.getNumPerBondParameters(), numBonds, "customCompoundBondParams", false, cc.getPrecision() == PrecisionLevel::Double);
     vector<vector<double> > paramVector(numBonds);
     for (int i = 0; i < numBonds; i++)
         force.getBondParameters(startIndex+i, atoms[i], paramVector[i]);
@@ -1795,14 +1864,19 @@ void CommonCalcCustomCentroidBondForceKernel::initialize(const System& system, c
         groupWeightVec.insert(groupWeightVec.end(), normalizedWeights[i].begin(), normalizedWeights[i].end());
     groupParticles.initialize<int>(cc, groupParticleVec.size(), "groupParticles");
     groupParticles.upload(groupParticleVec);
-    if (cc.getUseDoublePrecision()) {
+    if (cc.getPrecision() == PrecisionLevel::Double) {
         groupWeights.initialize<double>(cc, groupParticleVec.size(), "groupWeights");
         centerPositions.initialize<mm_double4>(cc, numGroups, "centerPositions");
     }
-    else {
+    else if ((cc.getPrecision() == PrecisionLevel::Mixed)
+	     || ((cc.getPrecision() == PrecisionLevel::Single))){
         groupWeights.initialize<float>(cc, groupParticleVec.size(), "groupWeights");
         centerPositions.initialize<mm_float4>(cc, numGroups, "centerPositions");
+    }else if (cc.getPrecision() == PrecisionLevel::Mixed){
+        groupWeights.initialize<half>(cc, groupParticleVec.size(), "groupWeights");
+        centerPositions.initialize<mm_half4>(cc, numGroups, "centerPositions");
     }
+    
     groupWeights.upload(groupWeightVec, true);
     groupOffsets.initialize<int>(cc, groupOffsetVec.size(), "groupOffsets");
     groupOffsets.upload(groupOffsetVec);
@@ -1813,7 +1887,7 @@ void CommonCalcCustomCentroidBondForceKernel::initialize(const System& system, c
     
     int groupsPerBond = force.getNumGroupsPerBond();
     vector<int> bondGroupVec(numBonds*groupsPerBond);
-    params = new ComputeParameterSet(cc, force.getNumPerBondParameters(), numBonds, "customCentroidBondParams", false, cc.getUseDoublePrecision());
+    params = new ComputeParameterSet(cc, force.getNumPerBondParameters(), numBonds, "customCentroidBondParams", false, cc.getPrecision() == PrecisionLevel::Double);
     vector<vector<double> > paramVector(numBonds);
     for (int i = 0; i < numBonds; i++) {
         vector<int> groups;
@@ -2613,7 +2687,7 @@ void CommonCalcCustomNonbondedForceKernel::initInteractionGroups(const CustomNon
     int endIndex = (cc.getContextIndex()+1)*numTileSets/numContexts;
     defines["FIRST_TILE"] = cc.intToString(startIndex);
     defines["LAST_TILE"] = cc.intToString(endIndex);
-    if ((localDataSize/4)%2 == 0 && !cc.getUseDoublePrecision())
+    if ((localDataSize/4)%2 == 0 && (cc.getPrecision() != PrecisionLevel::Double))
         defines["PARAMETER_SIZE_IS_EVEN"] = "1";
     ComputeProgram program = cc.compileProgram(cc.replaceStrings(CommonKernelSources::customNonbondedGroups, replacements), defines);
     interactionGroupKernel = program->createKernel("computeInteractionGroups");
@@ -2774,7 +2848,7 @@ void CommonCalcGBSAOBCForceKernel::initialize(const System& system, const GBSAOB
     string prefix = "obc"+cc.intToString(forceIndex)+"_";
     NonbondedUtilities& nb = cc.getNonbondedUtilities();
     params.initialize<mm_float2>(cc, cc.getPaddedNumAtoms(), "gbsaObcParams");
-    int elementSize = (cc.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
+    int elementSize = ((cc.getPrecision() == PrecisionLevel::Double) ? sizeof(double) : (cc.getPrecision() != PrecisionLevel::F16) ? sizeof(float) : sizeof(half));
     charges.initialize(cc, cc.getPaddedNumAtoms(), elementSize, "gbsaObcCharges");
     bornRadii.initialize(cc, cc.getPaddedNumAtoms(), elementSize, "bornRadii");
     obcChain.initialize(cc, cc.getPaddedNumAtoms(), elementSize, "obcChain");
@@ -3029,7 +3103,7 @@ void CommonCalcCustomGBForceKernel::initialize(const System& system, const Custo
     int paddedNumParticles = cc.getPaddedNumAtoms();
     int numParams = force.getNumPerParticleParameters();
     params = new ComputeParameterSet(cc, force.getNumPerParticleParameters(), paddedNumParticles, "customGBParameters", true);
-    computedValues = new ComputeParameterSet(cc, numComputedValues, paddedNumParticles, "customGBComputedValues", true, cc.getUseDoublePrecision());
+    computedValues = new ComputeParameterSet(cc, numComputedValues, paddedNumParticles, "customGBComputedValues", true, (cc.getPrecision() == PrecisionLevel::Double));
     if (force.getNumGlobalParameters() > 0)
         globals.initialize<float>(cc, force.getNumGlobalParameters(), "customGBGlobals");
     vector<vector<float> > paramVector(paddedNumParticles, vector<float>(numParams, 0));
@@ -3132,7 +3206,7 @@ void CommonCalcCustomGBForceKernel::initialize(const System& system, const Custo
             energyParamDerivExpressions[i].push_back(ex.differentiate(force.getEnergyParameterDerivativeName(j)).optimize());
     }
     bool deviceIsCpu = cc.getIsCPU();
-    int elementSize = (cc.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
+    int elementSize = ((cc.getPrecision() == PrecisionLevel::Double) ? sizeof(double) : (cc.getPrecision() != PrecisionLevel::F16) ? sizeof(float) : sizeof(half));
     valueBuffers.initialize<long long>(cc, cc.getPaddedNumAtoms(), "customGBValueBuffers");
     longEnergyDerivs.initialize<long long>(cc, numComputedValues*cc.getPaddedNumAtoms(), "customGBLongEnergyDerivatives");
     energyDerivs = new ComputeParameterSet(cc, numComputedValues, cc.getPaddedNumAtoms(), "customGBEnergyDerivatives", true);
@@ -3141,7 +3215,7 @@ void CommonCalcCustomGBForceKernel::initialize(const System& system, const Custo
     needEnergyParamDerivs = (force.getNumEnergyParameterDerivatives() > 0);
     dValue0dParam.resize(force.getNumEnergyParameterDerivatives());
     for (int i = 0; i < force.getNumEnergyParameterDerivatives(); i++) {
-        dValuedParam.push_back(new ComputeParameterSet(cc, numComputedValues, cc.getPaddedNumAtoms(), "dValuedParam", true, cc.getUseDoublePrecision()));
+        dValuedParam.push_back(new ComputeParameterSet(cc, numComputedValues, cc.getPaddedNumAtoms(), "dValuedParam", true, (cc.getPrecision() == PrecisionLevel::Double)));
         dValue0dParam[i].initialize<long long>(cc, cc.getPaddedNumAtoms(), "dValue0dParam");
         cc.addAutoclearBuffer(dValue0dParam[i]);
         string name = force.getEnergyParameterDerivativeName(i);
@@ -3748,7 +3822,7 @@ double CommonCalcCustomGBForceKernel::execute(ContextImpl& context, bool include
     ContextSelector selector(cc);
     bool deviceIsCpu = cc.getIsCPU();
     NonbondedUtilities& nb = cc.getNonbondedUtilities();
-    int elementSize = (cc.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
+    int elementSize = ((cc.getPrecision() == PrecisionLevel::Double) ? sizeof(double) : (cc.getPrecision() != PrecisionLevel::F16) ? sizeof(float) : sizeof(half));
     if (!hasInitializedKernels) {
         hasInitializedKernels = true;
         
@@ -4113,7 +4187,7 @@ void CommonCalcCustomHbondForceKernel::initialize(const System& system, const Cu
     int numAcceptorBlocks = (numAcceptors+31)/32;
     useBoundingBoxes = (force.getNonbondedMethod() != CustomHbondForce::NoCutoff && numDonorBlocks*numAcceptorBlocks > cc.getNumThreadBlocks());
     if (useBoundingBoxes) {
-        int elementSize = (cc.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
+        int elementSize = ((cc.getPrecision() == PrecisionLevel::Double) ? sizeof(double) : (cc.getPrecision() != PrecisionLevel::F16) ? sizeof(float) : sizeof(half));
         donorBlockCenter.initialize(cc, numDonorBlocks, 4*elementSize, "donorBlockCenter");
         donorBlockSize.initialize(cc, numDonorBlocks, 4*elementSize, "donorBlockSize");
         acceptorBlockCenter.initialize(cc, numAcceptorBlocks, 4*elementSize, "acceptorBlockCenter");
@@ -4669,7 +4743,7 @@ void CommonCalcCustomManyParticleForceKernel::initialize(const System& system, c
     
     int numAtomBlocks = cc.getPaddedNumAtoms()/32;
     if (nonbondedMethod != NoCutoff) {
-        int elementSize = (cc.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
+        int elementSize = ((cc.getPrecision() == PrecisionLevel::Double) ? sizeof(double) : (cc.getPrecision() != PrecisionLevel::F16) ? sizeof(float) : sizeof(half));
         blockCenter.initialize(cc, numAtomBlocks, 4*elementSize, "blockCenter");
         blockBoundingBox.initialize(cc, numAtomBlocks, 4*elementSize, "blockBoundingBox");
         numNeighborPairs.initialize<int>(cc, 1, "customManyParticleNumNeighborPairs");
@@ -5144,7 +5218,7 @@ void CommonCalcGayBerneForceKernel::initialize(const System& system, const GayBe
     // Create data structures used for the neighbor list.
 
     int numAtomBlocks = (numRealParticles+31)/32;
-    int elementSize = (cc.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
+    int elementSize = ((cc.getPrecision() == PrecisionLevel::Double) ? sizeof(double) : (cc.getPrecision() != PrecisionLevel::F16) ? sizeof(float) : sizeof(half));
     blockCenter.initialize(cc, numAtomBlocks, 4*elementSize, "blockCenter");
     blockBoundingBox.initialize(cc, numAtomBlocks, 4*elementSize, "blockBoundingBox");
     sortedPos.initialize(cc, numRealParticles, 4*elementSize, "sortedPos");
@@ -5532,7 +5606,7 @@ void CommonCalcCustomCVForceKernel::initialize(const System& system, const Custo
     copyStateKernel = program->createKernel("copyState");
     copyStateKernel->addArg(cc.getPosq());
     copyStateKernel->addArg(cc2.getPosq());
-    if (cc.getUseMixedPrecision()) {
+    if (cc.getPrecision() == PrecisionLevel::Mixed) {
         copyStateKernel->addArg(cc.getPosqCorrection());
         copyStateKernel->addArg(cc2.getPosqCorrection());
     }
@@ -5591,7 +5665,7 @@ double CommonCalcCustomCVForceKernel::execute(ContextImpl& context, ContextImpl&
     for (int i = 0; i < numCVs; i++) {
         double dEdV = variableDerivExpressions[i].evaluate();
         addForcesKernel->setArg(2*i+2, cvForces[i]);
-        if (cc.getUseDoublePrecision())
+        if (cc.getPrecision() == PrecisionLevel::Double)
             addForcesKernel->setArg(2*i+3, dEdV);
         else
             addForcesKernel->setArg(2*i+3, (float) dEdV);
@@ -5656,11 +5730,12 @@ void CommonIntegrateVerletStepKernel::initialize(const System& system, const Ver
     cc.initializeContexts();
     ContextSelector selector(cc);
     ComputeProgram program = cc.compileProgram(CommonKernelSources::verlet);
-    kernel1 = program->createKernel("integrateVerletPart1");
+    kernel1 = program->createKernel("integrateVerletPart1");///brhburhbuhuh
     kernel2 = program->createKernel("integrateVerletPart2");
 }
 
 void CommonIntegrateVerletStepKernel::execute(ContextImpl& context, const VerletIntegrator& integrator) {
+    printf("called verlet step kernel execute\n");
     ContextSelector selector(cc);
     IntegrationUtilities& integration = cc.getIntegrationUtilities();
     int numAtoms = cc.getNumAtoms();
@@ -5675,14 +5750,14 @@ void CommonIntegrateVerletStepKernel::execute(ContextImpl& context, const Verlet
         kernel1->addArg(cc.getVelm());
         kernel1->addArg(cc.getLongForceBuffer());
         kernel1->addArg(integration.getPosDelta());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             kernel1->addArg(cc.getPosqCorrection());
         kernel2->addArg(numAtoms);
         kernel2->addArg(integration.getStepSize());
         kernel2->addArg(cc.getPosq());
         kernel2->addArg(cc.getVelm());
         kernel2->addArg(integration.getPosDelta());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             kernel2->addArg(cc.getPosqCorrection());
     }
     integration.setNextStepSize(dt);
@@ -5723,13 +5798,17 @@ void CommonIntegrateLangevinMiddleStepKernel::initialize(const System& system, c
     kernel1 = program->createKernel("integrateLangevinMiddlePart1");
     kernel2 = program->createKernel("integrateLangevinMiddlePart2");
     kernel3 = program->createKernel("integrateLangevinMiddlePart3");
-    if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
+    if ((cc.getPrecision() == PrecisionLevel::Double) || (cc.getPrecision() == PrecisionLevel::Mixed)) {
         params.initialize<double>(cc, 2, "langevinMiddleParams");
         oldDelta.initialize<mm_double4>(cc, cc.getPaddedNumAtoms(), "oldDelta");
     }
-    else {
+    else if (cc.getPrecision() == PrecisionLevel::Single) {
         params.initialize<float>(cc, 2, "langevinMiddleParams");
         oldDelta.initialize<mm_float4>(cc, cc.getPaddedNumAtoms(), "oldDelta");
+    }
+    else if (cc.getPrecision() == PrecisionLevel::F16) {
+        params.initialize<half>(cc, 2, "langevinMiddleParams");
+        oldDelta.initialize<mm_half4>(cc, cc.getPaddedNumAtoms(), "oldDelta");
     }
     prevStepSize = -1.0;
 }
@@ -5760,7 +5839,7 @@ void CommonIntegrateLangevinMiddleStepKernel::execute(ContextImpl& context, cons
         kernel3->addArg(integration.getPosDelta());
         kernel3->addArg(oldDelta);
         kernel3->addArg(integration.getStepSize());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             kernel3->addArg(cc.getPosqCorrection());
     }
     double temperature = integrator.getTemperature();
@@ -5810,7 +5889,8 @@ double CommonIntegrateLangevinMiddleStepKernel::computeKineticEnergy(ContextImpl
 void CommonIntegrateNoseHooverStepKernel::initialize(const System& system, const NoseHooverIntegrator& integrator) {
     cc.initializeContexts();
     ContextSelector selector(cc);
-    bool useDouble = cc.getUseDoublePrecision() || cc.getUseMixedPrecision();
+    bool useDouble = ((cc.getPrecision() == PrecisionLevel::Double) ||
+		      (cc.getPrecision() == PrecisionLevel::Mixed));
     map<string, string> defines;
     defines["BOLTZ"] = cc.doubleToString(BOLTZ, true);
     ComputeProgram program = cc.compileProgram(CommonKernelSources::noseHooverIntegrator, defines);
@@ -5863,7 +5943,7 @@ void CommonIntegrateNoseHooverStepKernel::initialize(const System& system, const
     scaleAtomsVelocitiesKernel = program->createKernel("scaleAtomsVelocities");
     scalePairsVelocitiesKernel = program->createKernel("scalePairsVelocities");
     int energyBufferSize = cc.getEnergyBuffer().getSize();
-    if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision())
+    if ((cc.getPrecision() == PrecisionLevel::Double) || (cc.getPrecision() == PrecisionLevel::Mixed))
         energyBuffer.initialize<mm_double2>(cc, energyBufferSize, "energyBuffer");
     else
         energyBuffer.initialize<mm_float2>(cc, energyBufferSize, "energyBuffer");
@@ -5944,7 +6024,7 @@ void CommonIntegrateNoseHooverStepKernel::execute(ContextImpl& context, const No
         kernel4->addArg(integration.getPosDelta());
         kernel4->addArg(oldDelta);
         kernel4->addArg(integration.getStepSize());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             kernel4->addArg(cc.getPosqCorrection());
         if (numPairs > 0) {
             kernelHardWall->addArg(numPairs);
@@ -5954,7 +6034,7 @@ void CommonIntegrateNoseHooverStepKernel::execute(ContextImpl& context, const No
             kernelHardWall->addArg(cc.getVelm());
             kernelHardWall->addArg(pairListBuffer);
             kernelHardWall->addArg(pairTemperatureBuffer);
-            if (cc.getUseMixedPrecision())
+            if (cc.getPrecision() == PrecisionLevel::Mixed)
                 kernelHardWall->addArg(cc.getPosqCorrection());
         }
     }
@@ -6000,7 +6080,8 @@ double CommonIntegrateNoseHooverStepKernel::computeKineticEnergy(ContextImpl& co
 
 
 std::pair<double, double> CommonIntegrateNoseHooverStepKernel::propagateChain(ContextImpl& context, const NoseHooverChain &nhc, std::pair<double, double> kineticEnergies, double timeStep) {
-    bool useDouble = cc.getUseDoublePrecision() || cc.getUseMixedPrecision();
+    bool useDouble = (cc.getPrecision() == PrecisionLevel::Double) ||
+		     (cc.getPrecision() == PrecisionLevel::Mixed);
     int chainID = nhc.getChainID();
     int nAtoms = nhc.getThermostatedAtoms().size();
     int nPairs = nhc.getThermostatedPairs().size();
@@ -6168,7 +6249,8 @@ std::pair<double, double> CommonIntegrateNoseHooverStepKernel::propagateChain(Co
 
 double CommonIntegrateNoseHooverStepKernel::computeHeatBathEnergy(ContextImpl& context, const NoseHooverChain &nhc) {
     ContextSelector selector(cc);
-    bool useDouble = cc.getUseDoublePrecision() || cc.getUseMixedPrecision();
+    bool useDouble = (cc.getPrecision() == PrecisionLevel::Double) ||
+		     (cc.getPrecision() == PrecisionLevel::Mixed);
     int chainID = nhc.getChainID();
     int chainLength = nhc.getChainLength();
 
@@ -6250,7 +6332,8 @@ double CommonIntegrateNoseHooverStepKernel::computeHeatBathEnergy(ContextImpl& c
 
 std::pair<double, double> CommonIntegrateNoseHooverStepKernel::computeMaskedKineticEnergy(ContextImpl& context, const NoseHooverChain &nhc, bool downloadValue) {
     ContextSelector selector(cc);
-    bool useDouble = cc.getUseDoublePrecision() || cc.getUseMixedPrecision();
+    bool useDouble = (cc.getPrecision() == PrecisionLevel::Double) ||
+		     (cc.getPrecision() == PrecisionLevel::Mixed);
     int chainID = nhc.getChainID();
     const auto & nhcAtoms = nhc.getThermostatedAtoms();
     const auto & nhcPairs = nhc.getThermostatedPairs();
@@ -6376,7 +6459,8 @@ void CommonIntegrateNoseHooverStepKernel::scaleVelocities(ContextImpl& context, 
 void CommonIntegrateNoseHooverStepKernel::createCheckpoint(ContextImpl& context, ostream& stream) const {
     ContextSelector selector(cc);
     int numChains = chainState.size();
-    bool useDouble = cc.getUseDoublePrecision() || cc.getUseMixedPrecision();
+    bool useDouble = (cc.getPrecision() == PrecisionLevel::Double) ||
+		     (cc.getPrecision() == PrecisionLevel::Mixed);
     stream.write((char*) &numChains, sizeof(int));
     for (auto& state : chainState){
         int chainID = state.first;
@@ -6399,7 +6483,8 @@ void CommonIntegrateNoseHooverStepKernel::createCheckpoint(ContextImpl& context,
 void CommonIntegrateNoseHooverStepKernel::loadCheckpoint(ContextImpl& context, istream& stream) {
     ContextSelector selector(cc);
     int numChains;
-    bool useDouble = cc.getUseDoublePrecision() || cc.getUseMixedPrecision();
+    bool useDouble = (cc.getPrecision() == PrecisionLevel::Double) ||
+		     (cc.getPrecision() == PrecisionLevel::Mixed);
     stream.read((char*) &numChains, sizeof(int));
     chainState.clear();
     for (int i = 0; i < numChains; i++) {
@@ -6426,7 +6511,8 @@ void CommonIntegrateNoseHooverStepKernel::loadCheckpoint(ContextImpl& context, i
 void CommonIntegrateNoseHooverStepKernel::getChainStates(ContextImpl& context, vector<vector<double> >& positions, vector<vector<double> >& velocities) const {
     ContextSelector selector(cc);
     int numChains = chainState.size();
-    bool useDouble = cc.getUseDoublePrecision() || cc.getUseMixedPrecision();
+    bool useDouble = (cc.getPrecision() == PrecisionLevel::Double) ||
+		     (cc.getPrecision() == PrecisionLevel::Mixed);
     positions.clear();
     velocities.clear();
     positions.resize(numChains);
@@ -6455,7 +6541,8 @@ void CommonIntegrateNoseHooverStepKernel::getChainStates(ContextImpl& context, v
 void CommonIntegrateNoseHooverStepKernel::setChainStates(ContextImpl& context, const vector<vector<double> >& positions, const vector<vector<double> >& velocities) {
     ContextSelector selector(cc);
     int numChains = positions.size();
-    bool useDouble = cc.getUseDoublePrecision() || cc.getUseMixedPrecision();
+    bool useDouble = (cc.getPrecision() == PrecisionLevel::Double) ||
+		     (cc.getPrecision() == PrecisionLevel::Mixed);
     chainState.clear();
     for (int i = 0; i < numChains; i++) {
         int chainLength = positions[i].size();
@@ -6508,7 +6595,7 @@ void CommonIntegrateBrownianStepKernel::execute(ContextImpl& context, const Brow
         kernel2->addArg(cc.getPosq());
         kernel2->addArg(cc.getVelm());
         kernel2->addArg(integration.getPosDelta());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             kernel2->addArg(cc.getPosqCorrection());
     }
     double temperature = integrator.getTemperature();
@@ -6516,16 +6603,21 @@ void CommonIntegrateBrownianStepKernel::execute(ContextImpl& context, const Brow
     double stepSize = integrator.getStepSize();
     if (temperature != prevTemp || friction != prevFriction || stepSize != prevStepSize) {
         double tau = (friction == 0.0 ? 0.0 : 1.0/friction);
-        if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
+        if ((cc.getPrecision() == PrecisionLevel::Double) || (cc.getPrecision() == PrecisionLevel::Mixed)) {
             kernel1->setArg(2, tau*stepSize);
             kernel1->setArg(3, sqrt(2.0f*BOLTZ*temperature*stepSize*tau));
             kernel2->setArg(1, 1.0/stepSize);
         }
-        else {
+        else if(cc.getPrecision() == PrecisionLevel::Single){
             kernel1->setArg(2, (float) (tau*stepSize));
             kernel1->setArg(3, (float) (sqrt(2.0f*BOLTZ*temperature*stepSize*tau)));
             kernel2->setArg(1, (float) (1.0/stepSize));
         }
+        else if(cc.getPrecision() == PrecisionLevel::F16){
+   	    kernel1->setArg(2, (half) (tau*stepSize));
+            kernel1->setArg(3, (half) (sqrt(2.0f*BOLTZ*temperature*stepSize*tau)));
+            kernel2->setArg(1, (half) (1.0/stepSize));
+	}
         prevTemp = temperature;
         prevFriction = friction;
         prevStepSize = stepSize;
@@ -6584,14 +6676,14 @@ double CommonIntegrateVariableVerletStepKernel::execute(ContextImpl& context, co
         kernel1->addArg(cc.getVelm());
         kernel1->addArg(cc.getLongForceBuffer());
         kernel1->addArg(integration.getPosDelta());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             kernel1->addArg(cc.getPosqCorrection());
         kernel2->addArg(numAtoms);
         kernel2->addArg(integration.getStepSize());
         kernel2->addArg(cc.getPosq());
         kernel2->addArg(cc.getVelm());
         kernel2->addArg(integration.getPosDelta());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             kernel2->addArg(cc.getPosqCorrection());
         selectSizeKernel->addArg(numAtoms);
         selectSizeKernel->addArg(paddedNumAtoms);
@@ -6604,7 +6696,8 @@ double CommonIntegrateVariableVerletStepKernel::execute(ContextImpl& context, co
 
     // Select the step size to use.
 
-    bool useDouble = cc.getUseDoublePrecision() || cc.getUseMixedPrecision();
+    bool useDouble = (cc.getPrecision() == PrecisionLevel::Double) ||
+		     (cc.getPrecision() == PrecisionLevel::Mixed);
     double maxStepSize = maxTime-cc.getTime();
     if (integrator.getMaximumStepSize() > 0)
         maxStepSize = min(integrator.getMaximumStepSize(), maxStepSize);
@@ -6666,13 +6759,18 @@ void CommonIntegrateVariableLangevinStepKernel::initialize(const System& system,
     kernel1 = program->createKernel("integrateLangevinMiddlePart1");
     kernel2 = program->createKernel("integrateLangevinMiddlePart2");
     kernel3 = program->createKernel("integrateLangevinMiddlePart3");
-    if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
+    if ((cc.getPrecision() == PrecisionLevel::Double) ||
+	(cc.getPrecision() == PrecisionLevel::Mixed)) {
         params.initialize<double>(cc, 3, "langevinMiddleParams");
         oldDelta.initialize<mm_double4>(cc, cc.getPaddedNumAtoms(), "oldDelta");
     }
-    else {
+    else if (cc.getPrecision() == PrecisionLevel::Single){
         params.initialize<float>(cc, 3, "langevinMiddleParams");
         oldDelta.initialize<mm_float4>(cc, cc.getPaddedNumAtoms(), "oldDelta");
+    }
+    else if (cc.getPrecision() == PrecisionLevel::F16){
+        params.initialize<half>(cc, 3, "langevinMiddleParams");
+        oldDelta.initialize<mm_half4>(cc, cc.getPaddedNumAtoms(), "oldDelta");
     }
     selectSizeKernel = program->createKernel("selectLangevinStepSize");
     blockSize = min(256, system.getNumParticles());
@@ -6684,7 +6782,8 @@ double CommonIntegrateVariableLangevinStepKernel::execute(ContextImpl& context, 
     IntegrationUtilities& integration = cc.getIntegrationUtilities();
     int numAtoms = cc.getNumAtoms();
     int paddedNumAtoms = cc.getPaddedNumAtoms();
-    bool useDouble = cc.getUseDoublePrecision() || cc.getUseMixedPrecision();
+    bool useDouble = (cc.getPrecision() == PrecisionLevel::Double) ||
+		     (cc.getPrecision() == PrecisionLevel::Mixed);
     if (!hasInitializedKernels) {
         hasInitializedKernels = true;
         kernel1->addArg(numAtoms);
@@ -6706,7 +6805,7 @@ double CommonIntegrateVariableLangevinStepKernel::execute(ContextImpl& context, 
         kernel3->addArg(integration.getPosDelta());
         kernel3->addArg(oldDelta);
         kernel3->addArg(integration.getStepSize());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             kernel3->addArg(cc.getPosqCorrection());
         selectSizeKernel->addArg(numAtoms);
         selectSizeKernel->addArg(paddedNumAtoms);
@@ -6791,27 +6890,28 @@ public:
         int numAtoms = cc.getNumAtoms();
         const vector<int>& order = cc.getAtomIndex();
         for (int index = 0; index < perDofValues.size(); index++) {
-            if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
-                if (deviceValuesAreCurrent[index])
-                    perDofValues[index].download(localPerDofValuesDouble[index]);
-                vector<mm_double4> swap(numAtoms);
-                for (int i = 0; i < numAtoms; i++)
-                    swap[lastAtomOrder[i]] = localPerDofValuesDouble[index][i];
-                for (int i = 0; i < numAtoms; i++)
-                    localPerDofValuesDouble[index][i] = swap[order[i]];
-                perDofValues[index].upload(localPerDofValuesDouble[index]);
-            }
-            else {
-                if (deviceValuesAreCurrent[index])
-                    perDofValues[index].download(localPerDofValuesFloat[index]);
-                vector<mm_float4> swap(numAtoms);
-                for (int i = 0; i < numAtoms; i++)
-                    swap[lastAtomOrder[i]] = localPerDofValuesFloat[index][i];
-                for (int i = 0; i < numAtoms; i++)
-                    localPerDofValuesFloat[index][i] = swap[order[i]];
-                perDofValues[index].upload(localPerDofValuesFloat[index]);
-            }
-            deviceValuesAreCurrent[index] = true;
+          if ((cc.getPrecision() == PrecisionLevel::Double) || (cc.getPrecision() == PrecisionLevel::Mixed)) {
+            if (deviceValuesAreCurrent[index])
+              perDofValues[index].download(localPerDofValuesDouble[index]);
+            vector<mm_double4> swap(numAtoms);
+            for (int i = 0; i < numAtoms; i++)
+              swap[lastAtomOrder[i]] = localPerDofValuesDouble[index][i];
+            for (int i = 0; i < numAtoms; i++)
+              localPerDofValuesDouble[index][i] = swap[order[i]];
+            perDofValues[index].upload(localPerDofValuesDouble[index]);
+          } else if (cc.getPrecision() == PrecisionLevel::Single) {
+            if (deviceValuesAreCurrent[index])
+              perDofValues[index].download(localPerDofValuesFloat[index]);
+            vector<mm_float4> swap(numAtoms);
+            for (int i = 0; i < numAtoms; i++)
+              swap[lastAtomOrder[i]] = localPerDofValuesFloat[index][i];
+            for (int i = 0; i < numAtoms; i++)
+              localPerDofValuesFloat[index][i] = swap[order[i]];
+            perDofValues[index].upload(localPerDofValuesFloat[index]);
+          } else if (cc.getPrecision() == PrecisionLevel::F16) {
+	    assert(false && "TODO");
+	  }
+          deviceValuesAreCurrent[index] = true;
         }
         for (int i = 0; i < numAtoms; i++)
             lastAtomOrder[i] = order[i];
@@ -6851,7 +6951,7 @@ void CommonIntegrateCustomStepKernel::initialize(const System& system, const Cus
     ContextSelector selector(cc);
     cc.getIntegrationUtilities().initRandomNumberGenerator(integrator.getRandomNumberSeed());
     numGlobalVariables = integrator.getNumGlobalVariables();
-    int elementSize = (cc.getUseDoublePrecision() || cc.getUseMixedPrecision() ? sizeof(double) : sizeof(float));
+    int elementSize = ((cc.getPrecision() == PrecisionLevel::Double) ? sizeof(double) : (cc.getPrecision() != PrecisionLevel::F16) ? sizeof(float) : sizeof(half));
     sumBuffer.initialize(cc, system.getNumParticles(), elementSize, "sumBuffer");
     summedValue.initialize(cc, 1, elementSize, "summedValue");
     perDofValues.resize(integrator.getNumPerDofVariables());
@@ -6912,7 +7012,8 @@ void CommonIntegrateCustomStepKernel::prepareForComputation(ContextImpl& context
     IntegrationUtilities& integration = cc.getIntegrationUtilities();
     int numAtoms = cc.getNumAtoms();
     int numSteps = integrator.getNumComputations();
-    bool useDouble = cc.getUseDoublePrecision() || cc.getUseMixedPrecision();
+    bool useDouble = (cc.getPrecision() == PrecisionLevel::Double) ||
+		     (cc.getPrecision() == PrecisionLevel::Mixed);
     string tempType = (cc.getSupportsDoublePrecision() ? "double3" : "float3");
     string perDofType = (useDouble ? "double4" : "float4");
     if (!hasInitializedKernels) {
@@ -7029,7 +7130,7 @@ void CommonIntegrateCustomStepKernel::prepareForComputation(ContextImpl& context
         // Allocate space for storing global values, both on the host and the device.
         
         localGlobalValues.resize(expressionSet.getNumVariables());
-        int elementSize = (cc.getUseDoublePrecision() || cc.getUseMixedPrecision() ? sizeof(double) : sizeof(float));
+        int elementSize = ((cc.getPrecision() == PrecisionLevel::Double) ? sizeof(double) : (cc.getPrecision() != PrecisionLevel::F16) ? sizeof(float) : sizeof(half));
         globalValues.initialize(cc, expressionSet.getNumVariables(), elementSize, "globalValues");
         for (int i = 0; i < integrator.getNumGlobalVariables(); i++) {
             localGlobalValues[globalVariableIndex[i]] = initialGlobalVariables[i];
@@ -7179,7 +7280,7 @@ void CommonIntegrateCustomStepKernel::prepareForComputation(ContextImpl& context
                 requiredGaussian[step] = numGaussian;
                 requiredUniform[step] = numUniform;
                 kernel->addArg(cc.getPosq());
-                if (cc.getUseMixedPrecision())
+                if (cc.getPrecision() == PrecisionLevel::Mixed)
                     kernel->addArg(cc.getPosqCorrection());
                 else
                     kernel->addArg(nullptr);
@@ -7214,7 +7315,7 @@ void CommonIntegrateCustomStepKernel::prepareForComputation(ContextImpl& context
                 ComputeKernel kernel = program->createKernel("applyPositionDeltas");
                 kernels[step].push_back(kernel);
                 kernel->addArg(cc.getPosq());
-                if (cc.getUseMixedPrecision())
+                if (cc.getPrecision() == PrecisionLevel::Mixed)
                     kernel->addArg(cc.getPosqCorrection());
                 else
                     kernel->addArg(nullptr);
@@ -7270,7 +7371,7 @@ void CommonIntegrateCustomStepKernel::prepareForComputation(ContextImpl& context
         ComputeProgram program = cc.compileProgram(cc.replaceStrings(CommonKernelSources::customIntegratorPerDof, replacements), defines);
         kineticEnergyKernel = program->createKernel("computePerDof");
         kineticEnergyKernel->addArg(cc.getPosq());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             kineticEnergyKernel->addArg(cc.getPosqCorrection());
         else
             kineticEnergyKernel->addArg(nullptr);
@@ -7283,7 +7384,7 @@ void CommonIntegrateCustomStepKernel::prepareForComputation(ContextImpl& context
         kineticEnergyKernel->addArg();
         kineticEnergyKernel->addArg();
         kineticEnergyKernel->addArg(uniformRandoms);
-        if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision())
+        if ((cc.getPrecision() == PrecisionLevel::Double) || (cc.getPrecision() == PrecisionLevel::Mixed))
             kineticEnergyKernel->addArg(0.0);
         else
             kineticEnergyKernel->addArg(0.0f);
@@ -7442,7 +7543,7 @@ void CommonIntegrateCustomStepKernel::execute(ContextImpl& context, CustomIntegr
             kernels[step][0]->setArg(9, integration.prepareRandomNumbers(requiredGaussian[step]));
             kernels[step][0]->setArg(8, integration.getRandom());
             kernels[step][0]->setArg(10, uniformRandoms);
-            if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision())
+            if ((cc.getPrecision() == PrecisionLevel::Double) || (cc.getPrecision() == PrecisionLevel::Mixed))
                 kernels[step][0]->setArg(11, energy);
             else
                 kernels[step][0]->setArg(11, (float) energy);
@@ -7460,7 +7561,7 @@ void CommonIntegrateCustomStepKernel::execute(ContextImpl& context, CustomIntegr
             kernels[step][0]->setArg(9, integration.prepareRandomNumbers(requiredGaussian[step]));
             kernels[step][0]->setArg(8, integration.getRandom());
             kernels[step][0]->setArg(10, uniformRandoms);
-            if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision())
+            if ((cc.getPrecision() == PrecisionLevel::Double) || (cc.getPrecision() == PrecisionLevel::Mixed))
                 kernels[step][0]->setArg(11, energy);
             else
                 kernels[step][0]->setArg(11, (float) energy);
@@ -7469,7 +7570,7 @@ void CommonIntegrateCustomStepKernel::execute(ContextImpl& context, CustomIntegr
             cc.clearBuffer(sumBuffer);
             kernels[step][0]->execute(numAtoms, 128);
             kernels[step][1]->execute(sumWorkGroupSize, sumWorkGroupSize);
-            if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
+            if ((cc.getPrecision() == PrecisionLevel::Double) || (cc.getPrecision() == PrecisionLevel::Mixed)) {
                 double value;
                 summedValue.download(&value);
                 recordGlobalValue(value, stepTarget[step], integrator);
@@ -7560,7 +7661,7 @@ double CommonIntegrateCustomStepKernel::computeKineticEnergy(ContextImpl& contex
     kineticEnergyKernel->setArg(9, 0);
     kineticEnergyKernel->execute(cc.getNumAtoms());
     sumKineticEnergyKernel->execute(sumWorkGroupSize, sumWorkGroupSize);
-    if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
+    if ((cc.getPrecision() == PrecisionLevel::Double) || (cc.getPrecision() == PrecisionLevel::Mixed)) {
         double ke;
         summedValue.download(&ke);
         return ke;
@@ -7633,7 +7734,7 @@ void CommonIntegrateCustomStepKernel::getPerDofVariable(ContextImpl& context, in
     ContextSelector selector(cc);
     values.resize(perDofValues[variable].getSize());
     const vector<int>& order = cc.getAtomIndex();
-    if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
+    if ((cc.getPrecision() == PrecisionLevel::Double) || (cc.getPrecision() == PrecisionLevel::Mixed)) {
         if (!localValuesAreCurrent[variable]) {
             perDofValues[variable].download(localPerDofValuesDouble[variable]);
             localValuesAreCurrent[variable] = true;
@@ -7661,7 +7762,7 @@ void CommonIntegrateCustomStepKernel::setPerDofVariable(ContextImpl& context, in
     const vector<int>& order = cc.getAtomIndex();
     localValuesAreCurrent[variable] = true;
     deviceValuesAreCurrent[variable] = false;
-    if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
+    if ((cc.getPrecision() == PrecisionLevel::Double) || (cc.getPrecision() == PrecisionLevel::Mixed)) {
         localPerDofValuesDouble[variable].resize(values.size());
         for (int i = 0; i < (int) values.size(); i++)
             localPerDofValuesDouble[variable][i] = mm_double4(values[order[i]][0], values[order[i]][1], values[order[i]][2], 0);
@@ -7724,8 +7825,8 @@ void CommonCalcRMSDForceKernel::initialize(const System& system, const RMSDForce
     // Create data structures.
     
     ContextSelector selector(cc);
-    bool useDouble = cc.getUseDoublePrecision();
-    int elementSize = (useDouble ? sizeof(double) : sizeof(float));
+    bool useDouble = (cc.getPrecision() == PrecisionLevel::Double);
+    int elementSize = ((cc.getPrecision() == PrecisionLevel::Double) ? sizeof(double) : (cc.getPrecision() != PrecisionLevel::F16) ? sizeof(float) : sizeof(half));
     int numParticles = force.getParticles().size();
     if (numParticles == 0)
         numParticles = system.getNumParticles();
@@ -7792,7 +7893,7 @@ void CommonCalcRMSDForceKernel::recordParameters(const RMSDForce& force) {
 
 double CommonCalcRMSDForceKernel::execute(ContextImpl& context, bool includeForces, bool includeEnergy) {
     ContextSelector selector(cc);
-    if (cc.getUseDoublePrecision())
+    if (cc.getPrecision() == PrecisionLevel::Double)
         return executeImpl<double>(context);
     return executeImpl<float>(context);
 }
@@ -7925,7 +8026,7 @@ void CommonApplyAndersenThermostatKernel::execute(ContextImpl& context) {
     kernel->setArg(1, (float) context.getParameter(AndersenThermostat::CollisionFrequency()));
     kernel->setArg(2, (float) (BOLTZ*context.getParameter(AndersenThermostat::Temperature())));
     double stepSize = context.getIntegrator().getStepSize();
-    if (cc.getUseDoublePrecision())
+    if (cc.getPrecision() == PrecisionLevel::Double)
         kernel->setArg(4, stepSize);
     else
         kernel->setArg(4, (float) stepSize);
@@ -7936,12 +8037,12 @@ void CommonApplyAndersenThermostatKernel::execute(ContextImpl& context) {
 void CommonApplyMonteCarloBarostatKernel::initialize(const System& system, const Force& thermostat, bool rigidMolecules) {
     this->rigidMolecules = rigidMolecules;
     ContextSelector selector(cc);
-    savedPositions.initialize(cc, cc.getPaddedNumAtoms(), cc.getUseDoublePrecision() ? sizeof(mm_double4) : sizeof(mm_float4), "savedPositions");
-    savedVelocities.initialize(cc, cc.getPaddedNumAtoms(), cc.getUseDoublePrecision() || cc.getUseMixedPrecision() ? sizeof(mm_double4) : sizeof(mm_float4), "savedVelocities");
+    savedPositions.initialize(cc, cc.getPaddedNumAtoms(), (cc.getPrecision() == PrecisionLevel::Double) ? sizeof(mm_double4) : (cc.getPrecision() != PrecisionLevel::F16) ? sizeof(mm_float4) : sizeof(mm_half4), "savedPositions");
+    savedVelocities.initialize(cc, cc.getPaddedNumAtoms(), ((cc.getPrecision() == PrecisionLevel::Double) || (cc.getPrecision() == PrecisionLevel::Mixed)) ? sizeof(mm_double4) : (cc.getPrecision() != PrecisionLevel::F16) ? sizeof(mm_float4) : sizeof(mm_half4), "savedVelocities");
     savedLongForces.initialize<long long>(cc, cc.getPaddedNumAtoms()*3, "savedLongForces");
     try {
         cc.getFloatForceBuffer(); // This will throw an exception on the CUDA platform.
-        savedFloatForces.initialize(cc, cc.getPaddedNumAtoms(), cc.getUseDoublePrecision() ? sizeof(mm_double4) : sizeof(mm_float4), "savedForces");
+        savedFloatForces.initialize(cc, cc.getPaddedNumAtoms(), (cc.getPrecision() == PrecisionLevel::Double) ? sizeof(mm_double4) : (cc.getPrecision() != PrecisionLevel::F16) ? sizeof(mm_float4) : sizeof(mm_half4), "savedForces");
     }
     catch (...) {
         // The CUDA platform doesn't have a floating point force buffer, so we don't need to copy it.
@@ -8108,7 +8209,7 @@ void CommonCalcATMForceKernel::initKernels(ContextImpl& context, ContextImpl& in
         copyStateKernel->addArg(cc.getAtomIndexArray());
         copyStateKernel->addArg(inner0InvAtomOrder);
         copyStateKernel->addArg(inner1InvAtomOrder);
-        if (cc.getUseMixedPrecision()) {
+        if (cc.getPrecision() == PrecisionLevel::Mixed) {
             copyStateKernel->addArg(cc.getPosqCorrection());
             copyStateKernel->addArg(cc0.getPosqCorrection());
             copyStateKernel->addArg(cc1.getPosqCorrection());
@@ -8137,7 +8238,7 @@ void CommonCalcATMForceKernel::applyForces(ContextImpl& context, ContextImpl& in
         double dEdu0, double dEdu1, const map<string, double>& energyParamDerivs) {
     ContextSelector selector(cc);
     initKernels(context, innerContext0, innerContext1);
-    if (cc.getUseDoublePrecision()) {
+    if (cc.getPrecision() == PrecisionLevel::Double) {
         hybridForceKernel->setArg(8, dEdu0);
         hybridForceKernel->setArg(9, dEdu1);
     }
@@ -8231,7 +8332,7 @@ void CommonCalcCustomCPPForceKernel::initialize(const System& system, CustomCPPF
     forcesVec.resize(numParticles);
     positionsVec.resize(numParticles);
     floatForces.resize(3*numParticles);
-    int elementSize = (cc.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
+    int elementSize = ((cc.getPrecision() == PrecisionLevel::Double) ? sizeof(double) : (cc.getPrecision() != PrecisionLevel::F16) ? sizeof(float) : sizeof(half));
     forcesArray.initialize(cc, 3*numParticles, elementSize, "forces");
     map<string, string> defines;
     defines["NUM_ATOMS"] = cc.intToString(numParticles);
@@ -8268,7 +8369,7 @@ void CommonCalcCustomCPPForceKernel::executeOnWorkerThread(bool includeForces) {
     if (includeForces) {
         ContextSelector selector(cc);
         int numParticles = cc.getNumAtoms();
-        if (cc.getUseDoublePrecision())
+        if (cc.getPrecision() == PrecisionLevel::Double)
             forcesArray.upload((double*) forcesVec.data());
         else {
             for (int i = 0; i < numParticles; i++) {

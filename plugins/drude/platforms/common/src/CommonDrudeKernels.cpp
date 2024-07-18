@@ -31,6 +31,7 @@
 
 #include "CommonDrudeKernels.h"
 #include "CommonDrudeKernelSources.h"
+#include "openmm/common/ComputeContext.h"
 #include "openmm/internal/ContextImpl.h"
 #include "openmm/common/BondedUtilities.h"
 #include "openmm/common/ComputeForceInfo.h"
@@ -283,7 +284,7 @@ void CommonIntegrateDrudeLangevinStepKernel::execute(ContextImpl& context, const
         kernel1->addArg(integration.getRandom());
         kernel1->addArg();
         kernel2->addArg(cc.getPosq());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             kernel2->addArg(cc.getPosqCorrection());
         else
             kernel2->addArg(nullptr);
@@ -291,7 +292,7 @@ void CommonIntegrateDrudeLangevinStepKernel::execute(ContextImpl& context, const
         kernel2->addArg(cc.getVelm());
         kernel2->addArg(integration.getStepSize());
         hardwallKernel->addArg(cc.getPosq());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             hardwallKernel->addArg(cc.getPosqCorrection());
         else
             hardwallKernel->addArg(nullptr);
@@ -314,18 +315,31 @@ void CommonIntegrateDrudeLangevinStepKernel::execute(ContextImpl& context, const
     double maxDrudeDistance = integrator.getMaxDrudeDistance();
     double hardwallscaleDrude = sqrt(BOLTZ*integrator.getDrudeTemperature());
     if (stepSize != prevStepSize) {
-        if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
-            mm_double2 ss = mm_double2(0, stepSize);
-            integration.getStepSize().upload(&ss);
-        }
-        else {
-            mm_float2 ss = mm_float2(0, (float) stepSize);
-            integration.getStepSize().upload(&ss);
-        }
-        prevStepSize = stepSize;
+      switch(cc.getPrecision()){
+      case PrecisionLevel::Double:
+      case PrecisionLevel::Mixed:
+	{
+          mm_double2 ss = mm_double2(0, stepSize);
+          integration.getStepSize().upload(&ss);
+	  break;
+	}
+      case PrecisionLevel::Single:{
+	mm_float2 ss = mm_float2(0, (float) stepSize);
+        integration.getStepSize().upload(&ss);
+	break;
+      }
+      case PrecisionLevel::F16:{
+	assert(false && "TODO");
+      }
+      }
+      prevStepSize = stepSize;
     }
-    if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
-            kernel1->setArg(6, vscale);
+  
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double:
+    case PrecisionLevel::Mixed:
+      {
+	kernel1->setArg(6, vscale);
             kernel1->setArg(7, fscale);
             kernel1->setArg(8, noisescale);
             kernel1->setArg(9, vscaleDrude);
@@ -333,9 +347,10 @@ void CommonIntegrateDrudeLangevinStepKernel::execute(ContextImpl& context, const
             kernel1->setArg(11, noisescaleDrude);
             hardwallKernel->setArg(5, maxDrudeDistance);
             hardwallKernel->setArg(6, hardwallscaleDrude);
-    }
-    else {
-            kernel1->setArg(6, (float) vscale);
+	break;
+      }
+    case PrecisionLevel::Single:{
+      kernel1->setArg(6, (float) vscale);
             kernel1->setArg(7, (float) fscale);
             kernel1->setArg(8, (float) noisescale);
             kernel1->setArg(9, (float) vscaleDrude);
@@ -343,6 +358,11 @@ void CommonIntegrateDrudeLangevinStepKernel::execute(ContextImpl& context, const
             kernel1->setArg(11, (float) noisescaleDrude);
             hardwallKernel->setArg(5, (float) maxDrudeDistance);
             hardwallKernel->setArg(6, (float) hardwallscaleDrude);
+      break;
+    }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
     }
 
     // Call the first integration kernel.
@@ -430,14 +450,14 @@ void CommonIntegrateDrudeSCFStepKernel::execute(ContextImpl& context, const Drud
         kernel1->addArg(cc.getVelm());
         kernel1->addArg(cc.getLongForceBuffer());
         kernel1->addArg(integration.getPosDelta());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             kernel1->addArg(cc.getPosqCorrection());
         kernel2->addArg(numAtoms);
         kernel2->addArg(cc.getIntegrationUtilities().getStepSize());
         kernel2->addArg(cc.getPosq());
         kernel2->addArg(cc.getVelm());
         kernel2->addArg(integration.getPosDelta());
-        if (cc.getUseMixedPrecision())
+        if (cc.getPrecision() == PrecisionLevel::Mixed)
             kernel2->addArg(cc.getPosqCorrection());
         minimizeKernel->addArg((int) drudeParams.getSize());
         minimizeKernel->addArg(cc.getPaddedNumAtoms());
@@ -449,17 +469,26 @@ void CommonIntegrateDrudeSCFStepKernel::execute(ContextImpl& context, const Drud
         minimizeKernel->addArg(drudeParents);
     }
     if (dt != prevStepSize) {
-        if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
-            vector<mm_double2> stepSizeVec(1);
-            stepSizeVec[0] = mm_double2(dt, dt);
-            cc.getIntegrationUtilities().getStepSize().upload(stepSizeVec);
-        }
-        else {
-            vector<mm_float2> stepSizeVec(1);
-            stepSizeVec[0] = mm_float2((float) dt, (float) dt);
-            cc.getIntegrationUtilities().getStepSize().upload(stepSizeVec);
-        }
-        prevStepSize = dt;
+      switch(cc.getPrecision()){
+      case PrecisionLevel::Double:
+      case PrecisionLevel::Mixed:{
+	vector<mm_double2> stepSizeVec(1);
+        stepSizeVec[0] = mm_double2(dt, dt);
+        cc.getIntegrationUtilities().getStepSize().upload(stepSizeVec);
+	break;
+      }
+
+      case PrecisionLevel::Single:{
+	vector<mm_float2> stepSizeVec(1);
+        stepSizeVec[0] = mm_float2((float) dt, (float) dt);
+        cc.getIntegrationUtilities().getStepSize().upload(stepSizeVec);
+	break;
+      }
+      case PrecisionLevel::F16:{
+	assert(false && "TODO");
+      }
+      }
+      prevStepSize = dt;
     }
 
     // Call the first integration kernel.

@@ -65,12 +65,6 @@ namespace OpenMM {
  * thread is not used and calculations are performed on the main application thread.
  */
 
-  enum PrecisionLevel {
-    Single,
-    Double,
-    Mixed,
-    F16
-  };
   
 class OPENMM_EXPORT_COMMON CudaContext : public ComputeContext {
 public:
@@ -399,6 +393,22 @@ public:
       return (precision == PrecisionLevel::Mixed);
     }
     /**
+     * Get precision being used.
+     */
+    PrecisionLevel getPrecision() const {
+      return precision;
+    }
+
+    int getNonMixedElementSize() const {
+      assert(false && "TODO");
+      return -1;
+    }
+    int getMixedElementSize() const {
+      assert(false && "TODO");
+      return -1;
+    }
+  
+    /**
      * Get whether the periodic box is triclinic.
      */
     bool getBoxIsTriclinic() const {
@@ -448,35 +458,45 @@ public:
      * this context's precision.  This value is suitable for passing to kernels as an argument.
      */
     void* getPeriodicBoxSizePointer() {
-      return (getUseDoublePrecision() ? reinterpret_cast<void*>(&periodicBoxSize) : reinterpret_cast<void*>(&periodicBoxSizeFloat));
+      //return (getUseDoublePrecision() ? reinterpret_cast<void*>(&periodicBoxSize) : reinterpret_cast<void*>(&periodicBoxSizeFloat));
+      assert(false && "TODO");
+      return nullptr;
     }
     /**
      * Get a pointer to the inverse of the size of the periodic box, represented as either a float4 or double4 depending on
      * this context's precision.  This value is suitable for passing to kernels as an argument.
      */
     void* getInvPeriodicBoxSizePointer() {
-      return (getUseDoublePrecision() ? reinterpret_cast<void*>(&invPeriodicBoxSize) : reinterpret_cast<void*>(&invPeriodicBoxSizeFloat));
+      //return (getUseDoublePrecision() ? reinterpret_cast<void*>(&invPeriodicBoxSize) : reinterpret_cast<void*>(&invPeriodicBoxSizeFloat));
+      assert(false && "TODO");
+      return nullptr;
     }
     /**
      * Get a pointer to the first periodic box vector, represented as either a float4 or double4 depending on
      * this context's precision.  This value is suitable for passing to kernels as an argument.
      */
     void* getPeriodicBoxVecXPointer() {
-      return (getUseDoublePrecision() ? reinterpret_cast<void*>(&periodicBoxVecX) : reinterpret_cast<void*>(&periodicBoxVecXFloat));
+      //return (getUseDoublePrecision() ? reinterpret_cast<void*>(&periodicBoxVecX) : reinterpret_cast<void*>(&periodicBoxVecXFloat));
+      assert(false && "TODO");
+      return nullptr;
     }
     /**
      * Get a pointer to the second periodic box vector, represented as either a float4 or double4 depending on
      * this context's precision.  This value is suitable for passing to kernels as an argument.
      */
     void* getPeriodicBoxVecYPointer() {
-      return (getUseDoublePrecision() ? reinterpret_cast<void*>(&periodicBoxVecY) : reinterpret_cast<void*>(&periodicBoxVecYFloat));
+      //return (getUseDoublePrecision() ? reinterpret_cast<void*>(&periodicBoxVecY) : reinterpret_cast<void*>(&periodicBoxVecYFloat));
+      assert(false && "TODO");
+      return nullptr;
     }
     /**
      * Get a pointer to the third periodic box vector, represented as either a float4 or double4 depending on
      * this context's precision.  This value is suitable for passing to kernels as an argument.
      */
     void* getPeriodicBoxVecZPointer() {
-      return (getUseDoublePrecision() ? reinterpret_cast<void*>(&periodicBoxVecZ) : reinterpret_cast<void*>(&periodicBoxVecZFloat));
+      //return (getUseDoublePrecision() ? reinterpret_cast<void*>(&periodicBoxVecZ) : reinterpret_cast<void*>(&periodicBoxVecZFloat));
+      assert(false && "TODO");
+      return nullptr;
     }
     /**
      * Get the CudaIntegrationUtilities for this context.

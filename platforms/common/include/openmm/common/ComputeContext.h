@@ -48,6 +48,14 @@
 
 namespace OpenMM {
 
+  enum PrecisionLevel {
+    Single,
+    Double,
+    Mixed,
+    F16
+  };
+
+  
 class ExpressionUtilities;
 class System;
 class ThreadPool;
@@ -184,13 +192,17 @@ public:
      */
     virtual bool getSupportsDoublePrecision() const = 0;
     /**
-     * Get whether double precision is being used.
+     * Get precision is being used.
      */
-    virtual bool getUseDoublePrecision() const = 0;
+    virtual PrecisionLevel getPrecision() const = 0;
     /**
-     * Get whether mixed precision is being used.
+     * Get non mixed element size
      */
-    virtual bool getUseMixedPrecision() const = 0;
+    virtual int getNonMixedElementSize() const = 0;
+    /**
+     * Get mixed element size
+     */
+    virtual int getMixedElementSize() const = 0;
     /**
      * Get the current simulation time.
      */

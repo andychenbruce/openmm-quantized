@@ -71,32 +71,42 @@ void CommonIntegrateRPMDStepKernel::initialize(const System& system, const RPMDI
     if (numCopies != findFFTDimension(numCopies))
         throw OpenMMException("RPMDIntegrator: the number of copies must be a multiple of powers of 2, 3, and 5.");
     int paddedParticles = cc.getPaddedNumAtoms();
-    bool useDoublePrecision = (cc.getUseDoublePrecision() || cc.getUseMixedPrecision());
-    int elementSize = (useDoublePrecision ? sizeof(mm_double4) : sizeof(mm_float4));
+    int elementSize = cc.getMixedElementSize();
     forces.initialize<long long>(cc, numCopies*paddedParticles*3, "rpmdForces");
     positions.initialize(cc, numCopies*paddedParticles, elementSize, "rpmdPositions");
     velocities.initialize(cc, numCopies*paddedParticles, elementSize, "rpmdVelocities");
     cc.getIntegrationUtilities().initRandomNumberGenerator((unsigned int) integrator.getRandomNumberSeed());
     
     // Fill in the posq and velm arrays with safe values to avoid a risk of nans.
-    
-    if (useDoublePrecision) {
-        vector<mm_double4> temp(positions.getSize());
-        for (int i = 0; i < positions.getSize(); i++)
-            temp[i] = mm_double4(0, 0, 0, 0);
-        positions.upload(temp);
-        for (int i = 0; i < velocities.getSize(); i++)
-            temp[i] = mm_double4(0, 0, 0, 1);
-        velocities.upload(temp);
+
+  
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double:
+    case PrecisionLevel::Mixed:{
+      vector<mm_double4> temp(positions.getSize());
+      for (int i = 0; i < positions.getSize(); i++)
+        temp[i] = mm_double4(0, 0, 0, 0);
+      positions.upload(temp);
+      for (int i = 0; i < velocities.getSize(); i++)
+        temp[i] = mm_double4(0, 0, 0, 1);
+      velocities.upload(temp);
+
+      break;
     }
-    else {
-        vector<mm_float4> temp(positions.getSize());
-        for (int i = 0; i < positions.getSize(); i++)
-            temp[i] = mm_float4(0, 0, 0, 0);
-        positions.upload(temp);
-        for (int i = 0; i < velocities.getSize(); i++)
-            temp[i] = mm_float4(0, 0, 0, 1);
-        velocities.upload(temp);
+
+    case PrecisionLevel::Single:{
+      vector<mm_float4> temp(positions.getSize());
+      for (int i = 0; i < positions.getSize(); i++)
+        temp[i] = mm_float4(0, 0, 0, 0);
+      positions.upload(temp);
+      for (int i = 0; i < velocities.getSize(); i++)
+        temp[i] = mm_float4(0, 0, 0, 1);
+      velocities.upload(temp);
+      break;
+    }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
     }
     
     // Build a list of contractions.
@@ -227,24 +237,32 @@ void CommonIntegrateRPMDStepKernel::execute(ContextImpl& context, const RPMDInte
     
     // Apply the PILE-L thermostat.
     
-    bool useDoublePrecision = (cc.getUseDoublePrecision() || cc.getUseMixedPrecision());
     double dt = integrator.getStepSize();
     pileKernel->setArg(2, integration.prepareRandomNumbers(numParticles*numCopies));
-    if (useDoublePrecision) {
-        pileKernel->setArg(3, dt);
-        pileKernel->setArg(4, integrator.getTemperature()*BOLTZ);
-        pileKernel->setArg(5, integrator.getFriction());
-        stepKernel->setArg(3, dt);
-        stepKernel->setArg(4, integrator.getTemperature()*BOLTZ);
-        velocitiesKernel->setArg(2, dt);
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double:
+    case PrecisionLevel::Mixed:{
+      pileKernel->setArg(3, dt);
+      pileKernel->setArg(4, integrator.getTemperature()*BOLTZ);
+      pileKernel->setArg(5, integrator.getFriction());
+      stepKernel->setArg(3, dt);
+      stepKernel->setArg(4, integrator.getTemperature()*BOLTZ);
+      velocitiesKernel->setArg(2, dt);
+      break;
     }
-    else {
-        pileKernel->setArg(3, (float) dt);
-        pileKernel->setArg(4, (float) (integrator.getTemperature()*BOLTZ));
-        pileKernel->setArg(5, (float) integrator.getFriction());
-        stepKernel->setArg(3, (float) dt);
-        stepKernel->setArg(4, (float) (integrator.getTemperature()*BOLTZ));
-        velocitiesKernel->setArg(2, (float) dt);
+
+    case PrecisionLevel::Single:{
+      pileKernel->setArg(3, (float) dt);
+      pileKernel->setArg(4, (float) (integrator.getTemperature()*BOLTZ));
+      pileKernel->setArg(5, (float) integrator.getFriction());
+      stepKernel->setArg(3, (float) dt);
+      stepKernel->setArg(4, (float) (integrator.getTemperature()*BOLTZ));
+      velocitiesKernel->setArg(2, (float) dt);
+      break;
+    }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
     }
     if (integrator.getApplyThermostat())
         pileKernel->execute(numParticles*numCopies, workgroupSize);
@@ -367,27 +385,36 @@ void CommonIntegrateRPMDStepKernel::setPositions(int copy, const vector<Vec3>& p
     // Record the positions.
 
     ContextSelector selector(cc);
-    if (cc.getUseDoublePrecision()) {
-        vector<mm_double4> posq(cc.getPaddedNumAtoms());
-        cc.getPosq().download(posq);
-        for (int i = 0; i < numParticles; i++)
-            posq[i] = mm_double4(offsetPos[i][0], offsetPos[i][1], offsetPos[i][2], posq[i].w);
-        positions.uploadSubArray(&posq[0], copy*cc.getPaddedNumAtoms(), numParticles);
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double: {
+      vector<mm_double4> posq(cc.getPaddedNumAtoms());
+      cc.getPosq().download(posq);
+      for (int i = 0; i < numParticles; i++)
+        posq[i] = mm_double4(offsetPos[i][0], offsetPos[i][1], offsetPos[i][2], posq[i].w);
+      positions.uploadSubArray(&posq[0], copy*cc.getPaddedNumAtoms(), numParticles);
+
+      break;
     }
-    else if (cc.getUseMixedPrecision()) {
-        vector<mm_float4> posqf(cc.getPaddedNumAtoms());
-        cc.getPosq().download(posqf);
-        vector<mm_double4> posq(cc.getPaddedNumAtoms());
-        for (int i = 0; i < numParticles; i++)
-            posq[i] = mm_double4(offsetPos[i][0], offsetPos[i][1], offsetPos[i][2], posqf[i].w);
-        positions.uploadSubArray(&posq[0], copy*cc.getPaddedNumAtoms(), numParticles);
+    case PrecisionLevel::Mixed:{
+      vector<mm_float4> posqf(cc.getPaddedNumAtoms());
+      cc.getPosq().download(posqf);
+      vector<mm_double4> posq(cc.getPaddedNumAtoms());
+      for (int i = 0; i < numParticles; i++)
+        posq[i] = mm_double4(offsetPos[i][0], offsetPos[i][1], offsetPos[i][2], posqf[i].w);
+      positions.uploadSubArray(&posq[0], copy*cc.getPaddedNumAtoms(), numParticles);
+      break;
     }
-    else {
-        vector<mm_float4> posq(cc.getPaddedNumAtoms());
-        cc.getPosq().download(posq);
-        for (int i = 0; i < numParticles; i++)
-            posq[i] = mm_float4((float) offsetPos[i][0], (float) offsetPos[i][1], (float) offsetPos[i][2], posq[i].w);
-        positions.uploadSubArray(&posq[0], copy*cc.getPaddedNumAtoms(), numParticles);
+    case PrecisionLevel::Single:{
+      vector<mm_float4> posq(cc.getPaddedNumAtoms());
+      cc.getPosq().download(posq);
+      for (int i = 0; i < numParticles; i++)
+        posq[i] = mm_float4((float) offsetPos[i][0], (float) offsetPos[i][1], (float) offsetPos[i][2], posq[i].w);
+      positions.uploadSubArray(&posq[0], copy*cc.getPaddedNumAtoms(), numParticles);
+      break;
+    }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
     }
 }
 
@@ -397,19 +424,28 @@ void CommonIntegrateRPMDStepKernel::setVelocities(int copy, const vector<Vec3>& 
     if (vel.size() != numParticles)
         throw OpenMMException("RPMDIntegrator: wrong number of values passed to setVelocities()");
     ContextSelector selector(cc);
-    if (cc.getUseDoublePrecision() || cc.getUseMixedPrecision()) {
-        vector<mm_double4> velm(cc.getPaddedNumAtoms());
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double:
+    case PrecisionLevel::Mixed:
+      {
+	vector<mm_double4> velm(cc.getPaddedNumAtoms());
         cc.getVelm().download(velm);
         for (int i = 0; i < numParticles; i++)
-            velm[i] = mm_double4(vel[i][0], vel[i][1], vel[i][2], velm[i].w);
+          velm[i] = mm_double4(vel[i][0], vel[i][1], vel[i][2], velm[i].w);
         velocities.uploadSubArray(&velm[0], copy*cc.getPaddedNumAtoms(), numParticles);
+	break;
+      }
+    case PrecisionLevel::Single:{
+      vector<mm_float4> velm(cc.getPaddedNumAtoms());
+      cc.getVelm().download(velm);
+      for (int i = 0; i < numParticles; i++)
+        velm[i] = mm_float4((float) vel[i][0], (float) vel[i][1], (float) vel[i][2], velm[i].w);
+      velocities.uploadSubArray(&velm[0], copy*cc.getPaddedNumAtoms(), numParticles);
+      break;
     }
-    else {
-        vector<mm_float4> velm(cc.getPaddedNumAtoms());
-        cc.getVelm().download(velm);
-        for (int i = 0; i < numParticles; i++)
-            velm[i] = mm_float4((float) vel[i][0], (float) vel[i][1], (float) vel[i][2], velm[i].w);
-        velocities.uploadSubArray(&velm[0], copy*cc.getPaddedNumAtoms(), numParticles);
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
     }
 }
 

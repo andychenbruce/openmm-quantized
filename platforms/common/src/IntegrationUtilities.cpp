@@ -95,20 +95,37 @@ IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System
     // Create workspace arrays.
 
     lastStepSize = mm_double2(0.0, 0.0);
-    if (context.getUseDoublePrecision() || context.getUseMixedPrecision()) {
+    switch(context.getPrecision()){
+    case PrecisionLevel::Double:
+    case PrecisionLevel::Mixed:
+      {
         posDelta.initialize<mm_double4>(context, context.getPaddedNumAtoms(), "posDelta");
         vector<mm_double4> deltas(posDelta.getSize(), mm_double4(0.0, 0.0, 0.0, 0.0));
         posDelta.upload(deltas);
         stepSize.initialize<mm_double2>(context, 1, "stepSize");
         stepSize.upload(&lastStepSize);
-    }
-    else {
-        posDelta.initialize<mm_float4>(context, context.getPaddedNumAtoms(), "posDelta");
+	break;
+      }
+    case PrecisionLevel::Single:
+      {
+	posDelta.initialize<mm_float4>(context, context.getPaddedNumAtoms(), "posDelta");
         vector<mm_float4> deltas(posDelta.getSize(), mm_float4(0.0f, 0.0f, 0.0f, 0.0f));
         posDelta.upload(deltas);
         stepSize.initialize<mm_float2>(context, 1, "stepSize");
         mm_float2 lastStepSizeFloat = mm_float2(0.0f, 0.0f);
         stepSize.upload(&lastStepSizeFloat);
+	break;
+      }
+    case PrecisionLevel::F16:
+      {
+	posDelta.initialize<mm_half4>(context, context.getPaddedNumAtoms(), "posDelta");
+        vector<mm_half4> deltas(posDelta.getSize(), mm_half4(0.0f, 0.0f, 0.0f, 0.0f));
+        posDelta.upload(deltas);
+        stepSize.initialize<mm_float2>(context, 1, "stepSize");
+        mm_half2 lastStepSizeFloat = mm_half2(0.0f, 0.0f);
+        stepSize.upload(&lastStepSizeFloat);
+	break;
+      }
     }
 
     // Record the set of constraints and how many constraints each atom is involved in.
@@ -380,7 +397,7 @@ IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System
         vector<int> atomConstraintsVec(ccmaAtomConstraints.getSize());
         vector<int> numAtomConstraintsVec(ccmaNumAtomConstraints.getSize());
         vector<int> constraintMatrixColumnVec(ccmaConstraintMatrixColumn.getSize());
-        int elementSize = (context.getUseDoublePrecision() || context.getUseMixedPrecision() ? sizeof(double) : sizeof(float));
+        int elementSize = context.getMixedElementSize();
         ccmaDistance.initialize(context, numCCMA, 4*elementSize, "CcmaDistance");
         ccmaDelta1.initialize(context, numCCMA, elementSize, "CcmaDelta1");
         ccmaDelta2.initialize(context, numCCMA, elementSize, "CcmaDelta2");
@@ -500,7 +517,7 @@ IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System
         vsiteLocalCoordsAtoms.upload(vsiteLocalCoordsAtomVec);
         vsiteLocalCoordsStartIndex.upload(vsiteLocalCoordsStartVec);
     }
-    int elementSize = (context.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
+    int elementSize = context.getNonMixedElementSize();
     vsite2AvgWeights.initialize(context, max(1, num2Avg), 2*elementSize, "vsite2AvgWeights");
     vsite3AvgWeights.initialize(context, max(1, num3Avg), 4*elementSize, "vsite3AvgWeights");
     vsiteOutOfPlaneWeights.initialize(context, max(1, numOutOfPlane), 4*elementSize, "vsiteOutOfPlaneWeights");
@@ -596,7 +613,7 @@ IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System
     // Set arguments for virtual site kernels.
 
     vsitePositionKernel->addArg(context.getPosq());
-    if (context.getUseMixedPrecision())
+    if (context.getPrecision() == PrecisionLevel::Mixed)
         vsitePositionKernel->addArg(context.getPosqCorrection());
     else
         vsitePositionKernel->addArg(nullptr);
@@ -614,7 +631,7 @@ IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System
     vsitePositionKernel->addArg(vsiteStage);
     vsitePositionKernel->addArg();
     vsiteForceKernel->addArg(context.getPosq());
-    if (context.getUseMixedPrecision())
+    if (context.getPrecision() == PrecisionLevel::Mixed)
         vsiteForceKernel->addArg(context.getPosqCorrection());
     else
         vsiteForceKernel->addArg(nullptr);
@@ -645,7 +662,7 @@ IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System
         settlePosKernel->addArg(context.getVelm());
         settlePosKernel->addArg(settleAtoms);
         settlePosKernel->addArg(settleParams);
-        if (context.getUseMixedPrecision())
+        if (context.getPrecision() == PrecisionLevel::Mixed)
             settlePosKernel->addArg(context.getPosqCorrection());
         settleVelKernel->addArg((int) settleAtoms.getSize());
         settleVelKernel->addArg();
@@ -654,7 +671,7 @@ IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System
         settleVelKernel->addArg(context.getVelm());
         settleVelKernel->addArg(settleAtoms);
         settleVelKernel->addArg(settleParams);
-        if (context.getUseMixedPrecision())
+        if (context.getPrecision() == PrecisionLevel::Mixed)
             settleVelKernel->addArg(context.getPosqCorrection());
     }
     if (shakeAtoms.isInitialized()) {
@@ -664,7 +681,7 @@ IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System
         shakePosKernel->addArg(posDelta);
         shakePosKernel->addArg(shakeAtoms);
         shakePosKernel->addArg(shakeParams);
-        if (context.getUseMixedPrecision())
+        if (context.getPrecision() == PrecisionLevel::Mixed)
             shakePosKernel->addArg(context.getPosqCorrection());
         shakeVelKernel->addArg((int) shakeAtoms.getSize());
         shakeVelKernel->addArg();
@@ -672,7 +689,7 @@ IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System
         shakeVelKernel->addArg(context.getVelm());
         shakeVelKernel->addArg(shakeAtoms);
         shakeVelKernel->addArg(shakeParams);
-        if (context.getUseMixedPrecision())
+        if (context.getPrecision() == PrecisionLevel::Mixed)
             shakeVelKernel->addArg(context.getPosqCorrection());
     }
     if (ccmaConstraintAtoms.isInitialized()) {
@@ -680,7 +697,7 @@ IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System
         ccmaDirectionsKernel->addArg(ccmaDistance);
         ccmaDirectionsKernel->addArg(context.getPosq());
         ccmaDirectionsKernel->addArg(ccmaConverged);
-        if (context.getUseMixedPrecision())
+        if (context.getPrecision() == PrecisionLevel::Mixed)
             ccmaDirectionsKernel->addArg(context.getPosqCorrection());
         ccmaPosForceKernel->addArg(ccmaConstraintAtoms);
         ccmaPosForceKernel->addArg(ccmaDistance);
@@ -731,7 +748,7 @@ IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System
         ccmaFullKernel->addArg(ccmaConstraintMatrixColumn);
         ccmaFullKernel->addArg(ccmaConstraintMatrixValue);
         ccmaFullKernel->addArg();
-        if (context.getUseMixedPrecision())
+        if (context.getPrecision() == PrecisionLevel::Mixed)
             ccmaFullKernel->addArg(context.getPosqCorrection());
     }
 
@@ -742,24 +759,50 @@ IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System
 }
 
 void IntegrationUtilities::setNextStepSize(double size) {
-    if (size != lastStepSize.x || size != lastStepSize.y) {
-        lastStepSize = mm_double2(size, size);
-        if (context.getUseDoublePrecision() || context.getUseMixedPrecision())
-            stepSize.upload(&lastStepSize);
-        else {
-            mm_float2 lastStepSizeFloat = mm_float2((float) size, (float) size);
-            stepSize.upload(&lastStepSizeFloat);
-        }
+  if (size != lastStepSize.x || size != lastStepSize.y) {
+    lastStepSize = mm_double2(size, size);
+    switch(context.getPrecision()){
+    case PrecisionLevel::Double:
+    case PrecisionLevel::Mixed:
+      {
+	stepSize.upload(&lastStepSize);
+	break;
+      }
+    case PrecisionLevel::Single:
+      {
+	mm_float2 lastStepSizeFloat = mm_float2((float) size, (float) size);
+        stepSize.upload(&lastStepSizeFloat);
+	break;
+      }
+    case PrecisionLevel::F16:
+      {
+	assert(false && "TODO");
+	break;
+      }
     }
+  }
 }
 
 double IntegrationUtilities::getLastStepSize() {
-    if (context.getUseDoublePrecision() || context.getUseMixedPrecision())
+    switch(context.getPrecision()){
+    case PrecisionLevel::Double:
+    case PrecisionLevel::Mixed:
+      {
         stepSize.download(&lastStepSize);
-    else {
+	break;
+      }
+    case PrecisionLevel::Single:
+     {
         mm_float2 lastStepSizeFloat;
         stepSize.download(&lastStepSizeFloat);
         lastStepSize = mm_double2(lastStepSizeFloat.x, lastStepSizeFloat.y);
+	break;
+     }
+    case PrecisionLevel::F16:
+      {
+	assert(false && "TODO");
+	break;
+      }
     }
     return lastStepSize.y;
 }
@@ -863,10 +906,25 @@ double IntegrationUtilities::computeKineticEnergy(double timeShift) {
 
         timeShiftKernel->setArg(0, context.getVelm());
         timeShiftKernel->setArg(1, context.getLongForceBuffer());
-        if (context.getUseDoublePrecision())
-            timeShiftKernel->setArg(2, timeShift);
-        else
+        switch(context.getPrecision()){
+	case PrecisionLevel::Double:
+	  {
+	    timeShiftKernel->setArg(2, timeShift);
+	      break;
+	  }
+	case PrecisionLevel::Mixed:
+	case PrecisionLevel::Single:
+	  {
             timeShiftKernel->setArg(2, (float) timeShift);
+	    break;
+	  }
+	case PrecisionLevel::F16:
+	  {
+            timeShiftKernel->setArg(2, (half) timeShift);
+	    break;
+	  }
+	}
+
         timeShiftKernel->execute(numParticles);
         applyConstraintsImpl(true, 1e-4);
     }
@@ -874,16 +932,21 @@ double IntegrationUtilities::computeKineticEnergy(double timeShift) {
     // Compute the kinetic energy.
     
     double energy = 0.0;
-    if (context.getUseDoublePrecision() || context.getUseMixedPrecision()) {
-        auto velm = (mm_double4*)context.getPinnedBuffer();
+    switch(context.getPrecision()){
+    case PrecisionLevel::Double:
+    case PrecisionLevel::Mixed:
+      {
+	auto velm = (mm_double4*)context.getPinnedBuffer();
         context.getVelm().download(velm);
         for (int i = 0; i < numParticles; i++) {
-            mm_double4 v = velm[i];
-            if (v.w != 0)
-                energy += (v.x*v.x+v.y*v.y+v.z*v.z)/v.w;
+          mm_double4 v = velm[i];
+          if (v.w != 0)
+            energy += (v.x*v.x+v.y*v.y+v.z*v.z)/v.w;
         }
-    }
-    else {
+	break;
+      }
+    case PrecisionLevel::Single:
+      {
         auto velm = (mm_float4*)context.getPinnedBuffer();
         context.getVelm().download(velm);
         for (int i = 0; i < numParticles; i++) {
@@ -891,6 +954,19 @@ double IntegrationUtilities::computeKineticEnergy(double timeShift) {
             if (v.w != 0)
                 energy += (v.x*v.x+v.y*v.y+v.z*v.z)/v.w;
         }
+	break;
+      }
+    case PrecisionLevel::F16:
+      {
+        auto velm = (mm_half4*)context.getPinnedBuffer();
+        context.getVelm().download(velm);
+        for (int i = 0; i < numParticles; i++) {
+            mm_half4 v = velm[i];
+            if (v.w != (half)0)
+              energy += (double)((v.x*v.x+v.y*v.y+v.z*v.z)/v.w);
+        }
+	break;
+      }
     }
     
     // Restore the velocities.
@@ -912,10 +988,25 @@ void IntegrationUtilities::computeShiftedVelocities(double timeShift, vector<Vec
 
         timeShiftKernel->setArg(0, context.getVelm());
         timeShiftKernel->setArg(1, context.getLongForceBuffer());
-        if (context.getUseDoublePrecision())
+	switch(context.getPrecision()){
+	case PrecisionLevel::Double:
+	  {
+            
             timeShiftKernel->setArg(2, timeShift);
-        else
+	    break;
+	  }
+        case PrecisionLevel::Mixed:
+	case PrecisionLevel::Single:
+	  {
             timeShiftKernel->setArg(2, (float) timeShift);
+	    break;
+	  }
+	case PrecisionLevel::F16:
+	  {
+	    timeShiftKernel->setArg(2, (half) timeShift);
+	    break;
+	  }
+	}
         timeShiftKernel->execute(numParticles);
         applyConstraintsImpl(true, 1e-4);
     }
@@ -923,21 +1014,37 @@ void IntegrationUtilities::computeShiftedVelocities(double timeShift, vector<Vec
     // Retrieve the velocities.
     
     velocities.resize(numParticles);
-    if (context.getUseDoublePrecision() || context.getUseMixedPrecision()) {
+    switch(context.getPrecision()){
+    case PrecisionLevel::Double:
+    case PrecisionLevel::Mixed:
+      {
         auto velm = (mm_double4*)context.getPinnedBuffer();
         context.getVelm().download(velm);
         for (int i = 0; i < numParticles; i++) {
-            mm_double4 v = velm[i];
-            velocities[i] = Vec3(v.x, v.y, v.z);
+          mm_double4 v = velm[i];
+          velocities[i] = Vec3(v.x, v.y, v.z);
         }
-    }
-    else {
+      }
+    case PrecisionLevel::Single:
+      {
         auto velm = (mm_float4*)context.getPinnedBuffer();
         context.getVelm().download(velm);
         for (int i = 0; i < numParticles; i++) {
-            mm_float4 v = velm[i];
-            velocities[i] = Vec3(v.x, v.y, v.z);
+          mm_float4 v = velm[i];
+          velocities[i] = Vec3(v.x, v.y, v.z);
         }
+	break;
+      }
+    case PrecisionLevel::F16:
+      {
+        auto velm = (mm_half4*)context.getPinnedBuffer();
+        context.getVelm().download(velm);
+        for (int i = 0; i < numParticles; i++) {
+          mm_half4 v = velm[i];
+          velocities[i] = Vec3(v.x, v.y, v.z);
+        }
+	break;
+      }
     }
     
     // Restore the velocities.

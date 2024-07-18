@@ -62,7 +62,7 @@ public:
      * Get whether charge spreading should be done in fixed point.
      */
     bool useFixedPointChargeSpreading() const {
-        return cc.getUseDoublePrecision();
+      return cc.getPrecision() == PrecisionLevel::Double;
     }
 private:
     bool hasInitializedFFT;
@@ -93,7 +93,7 @@ public:
      * Get whether charge spreading should be done in fixed point.
      */
     bool useFixedPointChargeSpreading() const {
-        return cc.getUseDoublePrecision();
+        return cc.getPrecision() == PrecisionLevel::Double;
     }
     /**
      * Sort the atom grid indices.

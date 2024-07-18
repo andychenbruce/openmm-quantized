@@ -31,6 +31,7 @@
 #include "OpenCLKernelSources.h"
 #include "OpenCLExpressionUtilities.h"
 #include "OpenCLSort.h"
+#include "openmm/common/ComputeContext.h"
 #include <algorithm>
 #include <map>
 #include <set>
@@ -295,7 +296,7 @@ void OpenCLNonbondedUtilities::initialize(const System& system) {
         interactingTiles.initialize<cl_int>(context, maxTiles, "interactingTiles");
         interactingAtoms.initialize<cl_int>(context, OpenCLContext::TileSize*maxTiles, "interactingAtoms");
         interactionCount.initialize<cl_uint>(context, 1, "interactionCount");
-        int elementSize = (context.getUseDoublePrecision() ? sizeof(cl_double) : sizeof(cl_float));
+        int elementSize = context.getNonMixedElementSize();
         blockCenter.initialize(context, numAtomBlocks, 4*elementSize, "blockCenter");
         blockBoundingBox.initialize(context, numAtomBlocks, 4*elementSize, "blockBoundingBox");
         sortedBlocks.initialize<cl_uint>(context, numAtomBlocks, "sortedBlocks");
@@ -315,20 +316,29 @@ void OpenCLNonbondedUtilities::initialize(const System& system) {
 }
 
 static void setPeriodicBoxArgs(OpenCLContext& cl, cl::Kernel& kernel, int index) {
-    if (cl.getUseDoublePrecision()) {
-        kernel.setArg<mm_double4>(index++, cl.getPeriodicBoxSizeDouble());
+
+switch(cl.getPrecision()){
+case PrecisionLevel::Double:{
+kernel.setArg<mm_double4>(index++, cl.getPeriodicBoxSizeDouble());
         kernel.setArg<mm_double4>(index++, cl.getInvPeriodicBoxSizeDouble());
         kernel.setArg<mm_double4>(index++, cl.getPeriodicBoxVecXDouble());
         kernel.setArg<mm_double4>(index++, cl.getPeriodicBoxVecYDouble());
         kernel.setArg<mm_double4>(index, cl.getPeriodicBoxVecZDouble());
-    }
-    else {
+	break;
+}
+case PrecisionLevel::Mixed:
+case PrecisionLevel::Single:{
+
         kernel.setArg<mm_float4>(index++, cl.getPeriodicBoxSize());
         kernel.setArg<mm_float4>(index++, cl.getInvPeriodicBoxSize());
         kernel.setArg<mm_float4>(index++, cl.getPeriodicBoxVecX());
         kernel.setArg<mm_float4>(index++, cl.getPeriodicBoxVecY());
         kernel.setArg<mm_float4>(index, cl.getPeriodicBoxVecZ());
-    }
+break;
+}
+	case PrecisionLevel::F16:
+assert(false && "TODO");
+}
 }
 
 double OpenCLNonbondedUtilities::getMaxCutoffDistance() {

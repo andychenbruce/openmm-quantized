@@ -27,6 +27,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.      *
  * -------------------------------------------------------------------------- */
 
+#include <cuda_fp16.h>
+
 namespace OpenMM {
 
 struct mm_short2 {
@@ -57,6 +59,14 @@ struct mm_int4 {
     mm_int4(int x, int y, int z, int w) : x(x), y(y), z(z), w(w) {
     }
 };
+
+typedef half2 mm_half2;
+struct mm_half4 {
+  half x, y, z, w;
+    mm_half4() {}
+    mm_half4(half x, half y, half z, half w) : x(x), y(y), z(z), w(w) {}
+};
+  
 struct mm_float2 {
     float x, y;
     mm_float2() {

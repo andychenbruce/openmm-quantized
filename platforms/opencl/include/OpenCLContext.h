@@ -507,6 +507,28 @@ public:
         return useMixedPrecision;
     }
     /**
+     * Get precision level being used
+     */
+    PrecisionLevel getPrecision() const {
+      if(useDoublePrecision){
+	return PrecisionLevel::Double;
+      }
+      if(useMixedPrecision){
+	return PrecisionLevel::Mixed;
+      }
+      return PrecisionLevel::Single;
+    }
+
+    int getNonMixedElementSize() const {
+      assert(false && "TODO");
+      return -1;
+    }
+    int getMixedElementSize() const {
+      assert(false && "TODO");
+      return -1;
+    }
+  
+    /**
      * Get whether the periodic box is triclinic.
      */
     bool getBoxIsTriclinic() const {

@@ -111,7 +111,7 @@ string ComputeContext::replaceStrings(const string& input, const std::map<std::s
 
 string ComputeContext::doubleToString(double value, bool mixedIsDouble) const {
     stringstream s;
-    bool useDouble = (getUseDoublePrecision() || (mixedIsDouble && getUseMixedPrecision()));
+    bool useDouble = ((getPrecision() == PrecisionLevel::Double) || (mixedIsDouble && (getPrecision() == PrecisionLevel::Mixed)));
     s.precision(useDouble ? 16 : 8);
     s << scientific << value;
     if (!useDouble)
@@ -395,8 +395,10 @@ bool ComputeContext::invalidateMolecules(ComputeForceInfo* force) {
 void ComputeContext::resetAtomOrder() {
     ContextSelector selector(*this);
     vector<mm_int4> newCellOffsets(numAtoms);
-    if (getUseDoublePrecision()) {
-        vector<mm_double4> oldPosq(paddedNumAtoms);
+    switch(getPrecision()){
+    case PrecisionLevel::Double:
+      {
+      vector<mm_double4> oldPosq(paddedNumAtoms);
         vector<mm_double4> newPosq(paddedNumAtoms, mm_double4(0,0,0,0));
         vector<mm_double4> oldVelm(paddedNumAtoms);
         vector<mm_double4> newVelm(paddedNumAtoms, mm_double4(0,0,0,0));
@@ -410,8 +412,9 @@ void ComputeContext::resetAtomOrder() {
         }
         getPosq().upload(newPosq);
         getVelm().upload(newVelm);
-    }
-    else if (getUseMixedPrecision()) {
+	break;
+      }
+    case PrecisionLevel::Mixed:{
         vector<mm_float4> oldPosq(paddedNumAtoms);
         vector<mm_float4> newPosq(paddedNumAtoms, mm_float4(0,0,0,0));
         vector<mm_float4> oldPosqCorrection(paddedNumAtoms);
@@ -431,8 +434,9 @@ void ComputeContext::resetAtomOrder() {
         getPosq().upload(newPosq);
         getPosqCorrection().upload(newPosqCorrection);
         getVelm().upload(newVelm);
+	break;
     }
-    else {
+    case PrecisionLevel::Single:{
         vector<mm_float4> oldPosq(paddedNumAtoms);
         vector<mm_float4> newPosq(paddedNumAtoms, mm_float4(0,0,0,0));
         vector<mm_float4> oldVelm(paddedNumAtoms);
@@ -447,6 +451,26 @@ void ComputeContext::resetAtomOrder() {
         }
         getPosq().upload(newPosq);
         getVelm().upload(newVelm);
+	break;
+    }
+    case PrecisionLevel::F16:{
+      vector<mm_half4> oldPosq(paddedNumAtoms);
+        vector<mm_half4> newPosq(paddedNumAtoms, mm_half4(0,0,0,0));
+        vector<mm_half4> oldVelm(paddedNumAtoms);
+        vector<mm_half4> newVelm(paddedNumAtoms, mm_half4(0,0,0,0));
+        getPosq().download(oldPosq);
+        getVelm().download(oldVelm);
+        for (int i = 0; i < numAtoms; i++) {
+            int index = atomIndex[i];
+            newPosq[index] = oldPosq[i];
+            newVelm[index] = oldVelm[i];
+            newCellOffsets[index] = posCellOffsets[i];
+        }
+        getPosq().upload(newPosq);
+        getVelm().upload(newVelm);
+      break;
+    }
+
     }
     for (int i = 0; i < numAtoms; i++) {
         atomIndex[i] = i;
@@ -487,12 +511,28 @@ void ComputeContext::reorderAtoms() {
     forceNextReorder = false;
     atomsWereReordered = true;
     stepsSinceReorder = 0;
-    if (getUseDoublePrecision())
-        reorderAtomsImpl<double, mm_double4, double, mm_double4>();
-    else if (getUseMixedPrecision())
-        reorderAtomsImpl<float, mm_float4, double, mm_double4>();
-    else
-        reorderAtomsImpl<float, mm_float4, float, mm_float4>();
+    switch(getPrecision()){
+    case PrecisionLevel::Double:
+      {
+	reorderAtomsImpl<double, mm_double4, double, mm_double4>();
+	break;
+      }
+    case PrecisionLevel::Mixed:
+      {
+	reorderAtomsImpl<float, mm_float4, double, mm_double4>();
+	break;
+      }
+    case PrecisionLevel::Single:
+      {
+	reorderAtomsImpl<float, mm_float4, float, mm_float4>();
+	break;
+      }
+      case PrecisionLevel::F16:
+        {
+	  reorderAtomsImpl<half, mm_half4, half, mm_half4>();
+	  break;
+	}
+    }
 }
 
 template <class Real, class Real4, class Mixed, class Mixed4>
@@ -505,7 +545,7 @@ void ComputeContext::reorderAtomsImpl() {
     vector<Mixed4> oldVelm(paddedNumAtoms);
     getPosq().download(oldPosq);
     getVelm().download(oldVelm);
-    if (getUseMixedPrecision())
+    if (getPrecision() == PrecisionLevel::Mixed)
         getPosqCorrection().download(oldPosqCorrection);
     Real minx = oldPosq[0].x, maxx = oldPosq[0].x;
     Real miny = oldPosq[0].y, maxy = oldPosq[0].y;
@@ -568,14 +608,14 @@ void ComputeContext::reorderAtomsImpl() {
 
             for (int i = 0; i < numMolecules; i++) {
                 Real4 center = molPos[i];
-                int zcell = (int) floor(center.z*invPeriodicBoxSize[2]);
+                int zcell = (int) floor((double)center.z*invPeriodicBoxSize[2]);
                 center.x -= zcell*periodicBoxZ[0];
                 center.y -= zcell*periodicBoxZ[1];
                 center.z -= zcell*periodicBoxZ[2];
-                int ycell = (int) floor(center.y*invPeriodicBoxSize[1]);
+                int ycell = (int) floor((double)center.y*invPeriodicBoxSize[1]);
                 center.x -= ycell*periodicBoxY[0];
                 center.y -= ycell*periodicBoxY[1];
-                int xcell = (int) floor(center.x*invPeriodicBoxSize[0]);
+                int xcell = (int) floor((double)center.x*invPeriodicBoxSize[0]);
                 center.x -= xcell*periodicBoxX[0];
                 if (xcell != 0 || ycell != 0 || zcell != 0) {
                     Real dx = molPos[i].x-center.x;
@@ -602,10 +642,10 @@ void ComputeContext::reorderAtomsImpl() {
         bool useHilbert = (numMolecules > 5000 || atoms.size() > 8); // For small systems, a simple zigzag curve works better than a Hilbert curve.
         Real binWidth;
         if (useHilbert)
-            binWidth = (Real) (max(max(maxx-minx, maxy-miny), maxz-minz)/255.0);
+            binWidth = (Real) (max((double)max(maxx-minx, maxy-miny), (double)(maxz-minz))/255.0);
         else
             binWidth = (Real) (0.2*getNonbondedUtilities().getMaxCutoffDistance());
-        Real invBinWidth = (Real) (1.0/binWidth);
+        Real invBinWidth = (Real) (1.0/(double)binWidth);
         int xbins = 1 + (int) ((maxx-minx)*invBinWidth);
         int ybins = 1 + (int) ((maxy-miny)*invBinWidth);
         vector<pair<int, int> > molBins(numMolecules);
@@ -640,7 +680,7 @@ void ComputeContext::reorderAtomsImpl() {
                 int newIndex = mol.offsets[i]+atom;
                 originalIndex[newIndex] = atomIndex[oldIndex];
                 newPosq[newIndex] = oldPosq[oldIndex];
-                if (getUseMixedPrecision())
+                if (getPrecision() == PrecisionLevel::Mixed)
                     newPosqCorrection[newIndex] = oldPosqCorrection[oldIndex];
                 newVelm[newIndex] = oldVelm[oldIndex];
                 newCellOffsets[newIndex] = posCellOffsets[oldIndex];
@@ -656,7 +696,7 @@ void ComputeContext::reorderAtomsImpl() {
         posCellOffsets[i] = newCellOffsets[i];
     }
     getPosq().upload(newPosq);
-    if (getUseMixedPrecision())
+    if (getPrecision() == PrecisionLevel::Mixed)
         getPosqCorrection().upload(newPosqCorrection);
     getVelm().upload(newVelm);
     getAtomIndexArray().upload(atomIndex);

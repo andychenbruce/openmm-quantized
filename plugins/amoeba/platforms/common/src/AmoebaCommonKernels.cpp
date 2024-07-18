@@ -53,19 +53,27 @@ using namespace std;
 static void setPeriodicBoxArgs(ComputeContext& cc, ComputeKernel kernel, int index) {
     Vec3 a, b, c;
     cc.getPeriodicBoxVectors(a, b, c);
-    if (cc.getUseDoublePrecision()) {
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double: {
         kernel->setArg(index++, mm_double4(a[0], b[1], c[2], 0.0));
         kernel->setArg(index++, mm_double4(1.0/a[0], 1.0/b[1], 1.0/c[2], 0.0));
         kernel->setArg(index++, mm_double4(a[0], a[1], a[2], 0.0));
         kernel->setArg(index++, mm_double4(b[0], b[1], b[2], 0.0));
         kernel->setArg(index, mm_double4(c[0], c[1], c[2], 0.0));
+	break;
     }
-    else {
+    case PrecisionLevel::Mixed:
+    case PrecisionLevel::Single:{
         kernel->setArg(index++, mm_float4((float) a[0], (float) b[1], (float) c[2], 0.0f));
         kernel->setArg(index++, mm_float4(1.0f/(float) a[0], 1.0f/(float) b[1], 1.0f/(float) c[2], 0.0f));
         kernel->setArg(index++, mm_float4((float) a[0], (float) a[1], (float) a[2], 0.0f));
         kernel->setArg(index++, mm_float4((float) b[0], (float) b[1], (float) b[2], 0.0f));
         kernel->setArg(index, mm_float4((float) c[0], (float) c[1], (float) c[2], 0.0f));
+	break;
+    }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
     }
 }
 
@@ -236,10 +244,21 @@ void CommonCalcAmoebaMultipoleForceKernel::initialize(const System& system, cons
         int axisType, atomX, atomY, atomZ;
         vector<double> dipole, quadrupole;
         force.getMultipoleParameters(i, charge, dipole, quadrupole, axisType, atomZ, atomX, atomY, thole, damping, polarity);
-        if (cc.getUseDoublePrecision())
-            posqd[i] = mm_double4(0, 0, 0, charge);
-        else
-            posqf[i] = mm_float4(0, 0, 0, (float) charge);
+      
+	switch(cc.getPrecision()){
+	case PrecisionLevel::Double: {
+	  posqd[i] = mm_double4(0, 0, 0, charge);
+	  break;
+	}
+	case PrecisionLevel::Mixed:
+	case PrecisionLevel::Single:{
+	  posqf[i] = mm_float4(0, 0, 0, (float) charge);
+	  break;
+	}
+	case PrecisionLevel::F16:{
+	  assert(false && "TODO");
+	}
+	}
         dampingAndTholeVec.push_back(mm_float2((float) damping, (float) thole));
         polarizabilityVec.push_back((float) polarity);
         multipoleParticlesVec.push_back(mm_int4(atomX, atomY, atomZ, axisType));
@@ -281,7 +300,7 @@ void CommonCalcAmoebaMultipoleForceKernel::initialize(const System& system, cons
     // Create workspace arrays.
     
     polarizationType = force.getPolarizationType();
-    int elementSize = (cc.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
+    int elementSize = cc.getNonMixedElementSize();
     labDipoles.initialize(cc, 3*paddedNumAtoms, elementSize, "labDipoles");
     labQuadrupoles.initialize(cc, 5*paddedNumAtoms, elementSize, "labQuadrupoles");
     sphericalDipoles.initialize(cc, 3*paddedNumAtoms, elementSize, "sphericalDipoles");
@@ -700,7 +719,7 @@ void CommonCalcAmoebaMultipoleForceKernel::initialize(const System& system, cons
     if (usePME) {
         // Create required data structures.
 
-        int elementSize = (cc.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
+        int elementSize = cc.getNonMixedElementSize();
         pmeGrid1.initialize(cc, gridSizeX*gridSizeY*gridSizeZ, 2*elementSize, "pmeGrid1");
         pmeGrid2.initialize(cc, gridSizeX*gridSizeY*gridSizeZ, 2*elementSize, "pmeGrid2");
         if (useFixedPointChargeSpreading()) {
@@ -922,25 +941,34 @@ void CommonCalcAmoebaMultipoleForceKernel::initialize(const System& system, cons
                 }
                 moduli[i-1] = moduli[i-1]*zeta*zeta;
             }
-            if (cc.getUseDoublePrecision()) {
-                if (dim == 0)
-                    pmeBsplineModuliX.upload(moduli);
-                else if (dim == 1)
-                    pmeBsplineModuliY.upload(moduli);
-                else
-                    pmeBsplineModuliZ.upload(moduli);
-            }
-            else {
-                vector<float> modulif(ndata);
-                for (int i = 0; i < ndata; i++)
-                    modulif[i] = (float) moduli[i];
-                if (dim == 0)
-                    pmeBsplineModuliX.upload(modulif);
-                else if (dim == 1)
-                    pmeBsplineModuliY.upload(modulif);
-                else
-                    pmeBsplineModuliZ.upload(modulif);
-            }
+	    switch(cc.getPrecision()){
+	    case PrecisionLevel::Double: {
+              if (dim == 0)
+                pmeBsplineModuliX.upload(moduli);
+              else if (dim == 1)
+                pmeBsplineModuliY.upload(moduli);
+              else
+                pmeBsplineModuliZ.upload(moduli);
+
+	      break;
+	    }
+	    case PrecisionLevel::Mixed:
+	    case PrecisionLevel::Single:{
+              vector<float> modulif(ndata);
+              for (int i = 0; i < ndata; i++)
+                modulif[i] = (float) moduli[i];
+              if (dim == 0)
+                pmeBsplineModuliX.upload(modulif);
+              else if (dim == 1)
+                pmeBsplineModuliY.upload(modulif);
+              else
+                pmeBsplineModuliZ.upload(modulif);
+	      break;
+	    }
+	    case PrecisionLevel::F16:{
+	      assert(false && "TODO");
+	    }
+	    }
         }
     }
 
@@ -1107,53 +1135,60 @@ double CommonCalcAmoebaMultipoleForceKernel::execute(ContextImpl& context, bool 
         recipBoxVectors[0] = mm_double4(b[1]*c[2]*scale, 0, 0, 0);
         recipBoxVectors[1] = mm_double4(-b[0]*c[2]*scale, a[0]*c[2]*scale, 0, 0);
         recipBoxVectors[2] = mm_double4((b[0]*c[1]-b[1]*c[0])*scale, -a[0]*c[1]*scale, a[0]*b[1]*scale, 0);
-        if (cc.getUseDoublePrecision()) {
-            mm_double4 boxVectors[] = {mm_double4(a[0], a[1], a[2], 0), mm_double4(b[0], b[1], b[2], 0), mm_double4(c[0], c[1], c[2], 0)};
-            pmeConvolutionKernel->setArg(4, mm_double4(a[0], b[1], c[2], 0));
-            for (int i = 0; i < 3; i++) {
-                pmeTransformMultipolesKernel->setArg(4+i, recipBoxVectors[i]);
-                pmeTransformPotentialKernel->setArg(2+i, recipBoxVectors[i]);
-                pmeSpreadFixedMultipolesKernel->setArg(4+i, boxVectors[i]);
-                pmeSpreadFixedMultipolesKernel->setArg(7+i, recipBoxVectors[i]);
-                pmeSpreadInducedDipolesKernel->setArg(4+i, boxVectors[i]);
-                pmeSpreadInducedDipolesKernel->setArg(7+i, recipBoxVectors[i]);
-                pmeConvolutionKernel->setArg(5+i, recipBoxVectors[i]);
-                pmeFixedPotentialKernel->setArg(6+i, boxVectors[i]);
-                pmeFixedPotentialKernel->setArg(9+i, recipBoxVectors[i]);
-                pmeInducedPotentialKernel->setArg(5+i, boxVectors[i]);
-                pmeInducedPotentialKernel->setArg(8+i, recipBoxVectors[i]);
-                pmeFixedForceKernel->setArg(10+i, recipBoxVectors[i]);
-                pmeInducedForceKernel->setArg(15+i, recipBoxVectors[i]);
-                if (polarizationType != AmoebaMultipoleForce::Direct)
-                    pmeRecordInducedFieldDipolesKernel->setArg(6+i, recipBoxVectors[i]);
-            }
-        }
-        else {
-            mm_float4 recipBoxVectorsFloat[3];
-            recipBoxVectorsFloat[0] = mm_float4((float) recipBoxVectors[0].x, 0, 0, 0);
-            recipBoxVectorsFloat[1] = mm_float4((float) recipBoxVectors[1].x, (float) recipBoxVectors[1].y, 0, 0);
-            recipBoxVectorsFloat[2] = mm_float4((float) recipBoxVectors[2].x, (float) recipBoxVectors[2].y, (float) recipBoxVectors[2].z, 0);
-            mm_float4 boxVectors[] = {mm_float4(a[0], a[1], a[2], 0), mm_float4(b[0], b[1], b[2], 0), mm_float4(c[0], c[1], c[2], 0)};
-            pmeConvolutionKernel->setArg(4, mm_float4(a[0], b[1], c[2], 0));
-            for (int i = 0; i < 3; i++) {
-                pmeTransformMultipolesKernel->setArg(4+i, recipBoxVectorsFloat[i]);
-                pmeTransformPotentialKernel->setArg(2+i, recipBoxVectorsFloat[i]);
-                pmeSpreadFixedMultipolesKernel->setArg(4+i, boxVectors[i]);
-                pmeSpreadFixedMultipolesKernel->setArg(7+i, recipBoxVectorsFloat[i]);
-                pmeSpreadInducedDipolesKernel->setArg(4+i, boxVectors[i]);
-                pmeSpreadInducedDipolesKernel->setArg(7+i, recipBoxVectorsFloat[i]);
-                pmeConvolutionKernel->setArg(5+i, recipBoxVectorsFloat[i]);
-                pmeFixedPotentialKernel->setArg(6+i, boxVectors[i]);
-                pmeFixedPotentialKernel->setArg(9+i, recipBoxVectorsFloat[i]);
-                pmeInducedPotentialKernel->setArg(5+i, boxVectors[i]);
-                pmeInducedPotentialKernel->setArg(8+i, recipBoxVectorsFloat[i]);
-                pmeFixedForceKernel->setArg(10+i, recipBoxVectorsFloat[i]);
-                pmeInducedForceKernel->setArg(15+i, recipBoxVectorsFloat[i]);
-                if (polarizationType != AmoebaMultipoleForce::Direct)
-                    pmeRecordInducedFieldDipolesKernel->setArg(6+i, recipBoxVectorsFloat[i]);
-            }
-        }
-
+	switch(cc.getPrecision()){
+	case PrecisionLevel::Double: {
+	  mm_double4 boxVectors[] = {mm_double4(a[0], a[1], a[2], 0), mm_double4(b[0], b[1], b[2], 0), mm_double4(c[0], c[1], c[2], 0)};
+          pmeConvolutionKernel->setArg(4, mm_double4(a[0], b[1], c[2], 0));
+          for (int i = 0; i < 3; i++) {
+            pmeTransformMultipolesKernel->setArg(4+i, recipBoxVectors[i]);
+            pmeTransformPotentialKernel->setArg(2+i, recipBoxVectors[i]);
+            pmeSpreadFixedMultipolesKernel->setArg(4+i, boxVectors[i]);
+            pmeSpreadFixedMultipolesKernel->setArg(7+i, recipBoxVectors[i]);
+            pmeSpreadInducedDipolesKernel->setArg(4+i, boxVectors[i]);
+            pmeSpreadInducedDipolesKernel->setArg(7+i, recipBoxVectors[i]);
+            pmeConvolutionKernel->setArg(5+i, recipBoxVectors[i]);
+            pmeFixedPotentialKernel->setArg(6+i, boxVectors[i]);
+            pmeFixedPotentialKernel->setArg(9+i, recipBoxVectors[i]);
+            pmeInducedPotentialKernel->setArg(5+i, boxVectors[i]);
+            pmeInducedPotentialKernel->setArg(8+i, recipBoxVectors[i]);
+            pmeFixedForceKernel->setArg(10+i, recipBoxVectors[i]);
+            pmeInducedForceKernel->setArg(15+i, recipBoxVectors[i]);
+            if (polarizationType != AmoebaMultipoleForce::Direct)
+              pmeRecordInducedFieldDipolesKernel->setArg(6+i, recipBoxVectors[i]);
+          }
+	  break;
+	}
+	case PrecisionLevel::Mixed:
+	case PrecisionLevel::Single:{
+          mm_float4 recipBoxVectorsFloat[3];
+          recipBoxVectorsFloat[0] = mm_float4((float) recipBoxVectors[0].x, 0, 0, 0);
+          recipBoxVectorsFloat[1] = mm_float4((float) recipBoxVectors[1].x, (float) recipBoxVectors[1].y, 0, 0);
+          recipBoxVectorsFloat[2] = mm_float4((float) recipBoxVectors[2].x, (float) recipBoxVectors[2].y, (float) recipBoxVectors[2].z, 0);
+          mm_float4 boxVectors[] = {mm_float4(a[0], a[1], a[2], 0), mm_float4(b[0], b[1], b[2], 0), mm_float4(c[0], c[1], c[2], 0)};
+          pmeConvolutionKernel->setArg(4, mm_float4(a[0], b[1], c[2], 0));
+          for (int i = 0; i < 3; i++) {
+            pmeTransformMultipolesKernel->setArg(4+i, recipBoxVectorsFloat[i]);
+            pmeTransformPotentialKernel->setArg(2+i, recipBoxVectorsFloat[i]);
+            pmeSpreadFixedMultipolesKernel->setArg(4+i, boxVectors[i]);
+            pmeSpreadFixedMultipolesKernel->setArg(7+i, recipBoxVectorsFloat[i]);
+            pmeSpreadInducedDipolesKernel->setArg(4+i, boxVectors[i]);
+            pmeSpreadInducedDipolesKernel->setArg(7+i, recipBoxVectorsFloat[i]);
+            pmeConvolutionKernel->setArg(5+i, recipBoxVectorsFloat[i]);
+            pmeFixedPotentialKernel->setArg(6+i, boxVectors[i]);
+            pmeFixedPotentialKernel->setArg(9+i, recipBoxVectorsFloat[i]);
+            pmeInducedPotentialKernel->setArg(5+i, boxVectors[i]);
+            pmeInducedPotentialKernel->setArg(8+i, recipBoxVectorsFloat[i]);
+            pmeFixedForceKernel->setArg(10+i, recipBoxVectorsFloat[i]);
+            pmeInducedForceKernel->setArg(15+i, recipBoxVectorsFloat[i]);
+            if (polarizationType != AmoebaMultipoleForce::Direct)
+              pmeRecordInducedFieldDipolesKernel->setArg(6+i, recipBoxVectorsFloat[i]);
+          }
+	  break;
+	}
+	case PrecisionLevel::F16:{
+	  assert(false && "TODO");
+	}
+	}
         // Reciprocal space calculation.
         
         unsigned int maxTiles = nb.getInteractingTiles().getSize();
@@ -1367,27 +1402,35 @@ void CommonCalcAmoebaMultipoleForceKernel::computeExtrapolatedDipoles() {
 
 void CommonCalcAmoebaMultipoleForceKernel::ensureMultipolesValid(ContextImpl& context) {
     if (multipolesAreValid) {
-        int numParticles = cc.getNumAtoms();
-        if (cc.getUseDoublePrecision()) {
-            vector<mm_double4> pos1, pos2;
-            cc.getPosq().download(pos1);
-            lastPositions.download(pos2);
-            for (int i = 0; i < numParticles; i++)
-                if (pos1[i].x != pos2[i].x || pos1[i].y != pos2[i].y || pos1[i].z != pos2[i].z) {
-                    multipolesAreValid = false;
-                    break;
-                }
-        }
-        else {
-            vector<mm_float4> pos1, pos2;
-            cc.getPosq().download(pos1);
-            lastPositions.download(pos2);
-            for (int i = 0; i < numParticles; i++)
-                if (pos1[i].x != pos2[i].x || pos1[i].y != pos2[i].y || pos1[i].z != pos2[i].z) {
-                    multipolesAreValid = false;
-                    break;
-                }
-        }
+      int numParticles = cc.getNumAtoms();
+      switch(cc.getPrecision()){
+      case PrecisionLevel::Double: {
+        vector<mm_double4> pos1, pos2;
+        cc.getPosq().download(pos1);
+        lastPositions.download(pos2);
+        for (int i = 0; i < numParticles; i++)
+          if (pos1[i].x != pos2[i].x || pos1[i].y != pos2[i].y || pos1[i].z != pos2[i].z) {
+            multipolesAreValid = false;
+            break;
+          }
+	break;
+      }
+      case PrecisionLevel::Mixed:
+      case PrecisionLevel::Single:{
+        vector<mm_float4> pos1, pos2;
+        cc.getPosq().download(pos1);
+        lastPositions.download(pos2);
+        for (int i = 0; i < numParticles; i++)
+          if (pos1[i].x != pos2[i].x || pos1[i].y != pos2[i].y || pos1[i].z != pos2[i].z) {
+            multipolesAreValid = false;
+            break;
+          }
+	break;
+      }
+      case PrecisionLevel::F16:{
+	assert(false && "TODO");
+      }
+      }
     }
     if (!multipolesAreValid)
         context.calcForcesAndEnergy(false, false, context.getIntegrator().getIntegrationForceGroups());
@@ -1399,17 +1442,25 @@ void CommonCalcAmoebaMultipoleForceKernel::getLabFramePermanentDipoles(ContextIm
     int numParticles = cc.getNumAtoms();
     dipoles.resize(numParticles);
     const vector<int>& order = cc.getAtomIndex();
-    if (cc.getUseDoublePrecision()) {
-        vector<double> labDipoleVec;
-        labDipoles.download(labDipoleVec);
-        for (int i = 0; i < numParticles; i++)
-            dipoles[order[i]] = Vec3(labDipoleVec[3*i], labDipoleVec[3*i+1], labDipoleVec[3*i+2]);
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double: {
+      vector<double> labDipoleVec;
+      labDipoles.download(labDipoleVec);
+      for (int i = 0; i < numParticles; i++)
+        dipoles[order[i]] = Vec3(labDipoleVec[3*i], labDipoleVec[3*i+1], labDipoleVec[3*i+2]);
+      break;
     }
-    else {
-        vector<float> labDipoleVec;
-        labDipoles.download(labDipoleVec);
-        for (int i = 0; i < numParticles; i++)
-            dipoles[order[i]] = Vec3(labDipoleVec[3*i], labDipoleVec[3*i+1], labDipoleVec[3*i+2]);
+    case PrecisionLevel::Mixed:
+    case PrecisionLevel::Single:{
+      vector<float> labDipoleVec;
+      labDipoles.download(labDipoleVec);
+      for (int i = 0; i < numParticles; i++)
+        dipoles[order[i]] = Vec3(labDipoleVec[3*i], labDipoleVec[3*i+1], labDipoleVec[3*i+2]);
+      break;
+    }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
     }
 }
 
@@ -1420,18 +1471,27 @@ void CommonCalcAmoebaMultipoleForceKernel::getInducedDipoles(ContextImpl& contex
     int numParticles = cc.getNumAtoms();
     dipoles.resize(numParticles);
     const vector<int>& order = cc.getAtomIndex();
-    if (cc.getUseDoublePrecision()) {
-        vector<double> d;
-        inducedDipole.download(d);
-        for (int i = 0; i < numParticles; i++)
-            dipoles[order[i]] = Vec3(d[3*i], d[3*i+1], d[3*i+2]);
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double: {
+      vector<double> d;
+      inducedDipole.download(d);
+      for (int i = 0; i < numParticles; i++)
+        dipoles[order[i]] = Vec3(d[3*i], d[3*i+1], d[3*i+2]);
+      break;
     }
-    else {
-        vector<float> d;
-        inducedDipole.download(d);
-        for (int i = 0; i < numParticles; i++)
-            dipoles[order[i]] = Vec3(d[3*i], d[3*i+1], d[3*i+2]);
+    case PrecisionLevel::Mixed:
+    case PrecisionLevel::Single:{
+      vector<float> d;
+      inducedDipole.download(d);
+      for (int i = 0; i < numParticles; i++)
+        dipoles[order[i]] = Vec3(d[3*i], d[3*i+1], d[3*i+2]);
+      break;
     }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
+    }
+
 }
 
 
@@ -1441,39 +1501,47 @@ void CommonCalcAmoebaMultipoleForceKernel::getTotalDipoles(ContextImpl& context,
     int numParticles = cc.getNumAtoms();
     dipoles.resize(numParticles);
     const vector<int>& order = cc.getAtomIndex();
-    if (cc.getUseDoublePrecision()) {
-        vector<mm_double4> posqVec;
-        vector<double> labDipoleVec;
-        vector<double> inducedDipoleVec;
-        double totalDipoleVecX;
-        double totalDipoleVecY;
-        double totalDipoleVecZ;
-        inducedDipole.download(inducedDipoleVec);
-        labDipoles.download(labDipoleVec);
-        cc.getPosq().download(posqVec);
-        for (int i = 0; i < numParticles; i++) {
-            totalDipoleVecX = labDipoleVec[3*i] + inducedDipoleVec[3*i];
-            totalDipoleVecY = labDipoleVec[3*i+1] + inducedDipoleVec[3*i+1];
-            totalDipoleVecZ = labDipoleVec[3*i+2] + inducedDipoleVec[3*i+2];
-            dipoles[order[i]] = Vec3(totalDipoleVecX, totalDipoleVecY, totalDipoleVecZ);
-        }
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double: {
+      vector<mm_double4> posqVec;
+      vector<double> labDipoleVec;
+      vector<double> inducedDipoleVec;
+      double totalDipoleVecX;
+      double totalDipoleVecY;
+      double totalDipoleVecZ;
+      inducedDipole.download(inducedDipoleVec);
+      labDipoles.download(labDipoleVec);
+      cc.getPosq().download(posqVec);
+      for (int i = 0; i < numParticles; i++) {
+        totalDipoleVecX = labDipoleVec[3*i] + inducedDipoleVec[3*i];
+        totalDipoleVecY = labDipoleVec[3*i+1] + inducedDipoleVec[3*i+1];
+        totalDipoleVecZ = labDipoleVec[3*i+2] + inducedDipoleVec[3*i+2];
+        dipoles[order[i]] = Vec3(totalDipoleVecX, totalDipoleVecY, totalDipoleVecZ);
+      }
+      break;
     }
-    else {
-        vector<mm_float4> posqVec;
-        vector<float> labDipoleVec;
-        vector<float> inducedDipoleVec;
-        float totalDipoleVecX;
-        float totalDipoleVecY;
-        float totalDipoleVecZ;
-        inducedDipole.download(inducedDipoleVec);
-        labDipoles.download(labDipoleVec);
-        cc.getPosq().download(posqVec);
-        for (int i = 0; i < numParticles; i++) {
-            totalDipoleVecX = labDipoleVec[3*i] + inducedDipoleVec[3*i];
-            totalDipoleVecY = labDipoleVec[3*i+1] + inducedDipoleVec[3*i+1];
-            totalDipoleVecZ = labDipoleVec[3*i+2] + inducedDipoleVec[3*i+2];
-            dipoles[order[i]] = Vec3(totalDipoleVecX, totalDipoleVecY, totalDipoleVecZ);
-        }
+    case PrecisionLevel::Mixed:
+    case PrecisionLevel::Single:{
+      vector<mm_float4> posqVec;
+      vector<float> labDipoleVec;
+      vector<float> inducedDipoleVec;
+      float totalDipoleVecX;
+      float totalDipoleVecY;
+      float totalDipoleVecZ;
+      inducedDipole.download(inducedDipoleVec);
+      labDipoles.download(labDipoleVec);
+      cc.getPosq().download(posqVec);
+      for (int i = 0; i < numParticles; i++) {
+        totalDipoleVecX = labDipoleVec[3*i] + inducedDipoleVec[3*i];
+        totalDipoleVecY = labDipoleVec[3*i+1] + inducedDipoleVec[3*i+1];
+        totalDipoleVecZ = labDipoleVec[3*i+2] + inducedDipoleVec[3*i+2];
+        dipoles[order[i]] = Vec3(totalDipoleVecX, totalDipoleVecY, totalDipoleVecZ);
+      }
+      break;
+    }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
     }
 }
 
@@ -1481,24 +1549,32 @@ void CommonCalcAmoebaMultipoleForceKernel::getElectrostaticPotential(ContextImpl
     ContextSelector selector(cc);
     ensureMultipolesValid(context);
     int numPoints = inputGrid.size();
-    int elementSize = (cc.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
+    int elementSize = cc.getNonMixedElementSize();
     ComputeArray points, potential;
     points.initialize(cc, numPoints, 4*elementSize, "points");
     potential.initialize(cc, numPoints, elementSize, "potential");
     
     // Copy the grid points to the GPU.
     
-    if (cc.getUseDoublePrecision()) {
-        vector<mm_double4> p(numPoints);
-        for (int i = 0; i < numPoints; i++)
-            p[i] = mm_double4(inputGrid[i][0], inputGrid[i][1], inputGrid[i][2], 0);
-        points.upload(p);
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double: {
+      vector<mm_double4> p(numPoints);
+      for (int i = 0; i < numPoints; i++)
+        p[i] = mm_double4(inputGrid[i][0], inputGrid[i][1], inputGrid[i][2], 0);
+      points.upload(p);
+      break;
     }
-    else {
-        vector<mm_float4> p(numPoints);
-        for (int i = 0; i < numPoints; i++)
-            p[i] = mm_float4((float) inputGrid[i][0], (float) inputGrid[i][1], (float) inputGrid[i][2], 0);
-        points.upload(p);
+    case PrecisionLevel::Mixed:
+    case PrecisionLevel::Single:{
+      vector<mm_float4> p(numPoints);
+      for (int i = 0; i < numPoints; i++)
+        p[i] = mm_float4((float) inputGrid[i][0], (float) inputGrid[i][1], (float) inputGrid[i][2], 0);
+      points.upload(p);
+      break;
+    }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
     }
     
     // Compute the potential.
@@ -1509,13 +1585,22 @@ void CommonCalcAmoebaMultipoleForceKernel::getElectrostaticPotential(ContextImpl
     setPeriodicBoxArgs(cc, computePotentialKernel, 7);
     computePotentialKernel->execute(numPoints, 128);
     outputElectrostaticPotential.resize(numPoints);
-    if (cc.getUseDoublePrecision())
-        potential.download(outputElectrostaticPotential);
-    else {
-        vector<float> p(numPoints);
-        potential.download(p);
-        for (int i = 0; i < numPoints; i++)
-            outputElectrostaticPotential[i] = p[i];
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double: {
+      potential.download(outputElectrostaticPotential);
+      break;
+    }
+    case PrecisionLevel::Mixed:
+    case PrecisionLevel::Single:{
+      vector<float> p(numPoints);
+      potential.download(p);
+      for (int i = 0; i < numPoints; i++)
+        outputElectrostaticPotential[i] = p[i];
+      break;
+    }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
     }
 }
 
@@ -1635,12 +1720,24 @@ void CommonCalcAmoebaMultipoleForceKernel::computeSystemMultipoleMoments(Context
 void CommonCalcAmoebaMultipoleForceKernel::getSystemMultipoleMoments(ContextImpl& context, vector<double>& outputMultipoleMoments) {
     ContextSelector selector(cc);
     ensureMultipolesValid(context);
-    if (cc.getUseDoublePrecision())
-        computeSystemMultipoleMoments<double, mm_double4, mm_double4>(context, outputMultipoleMoments);
-    else if (cc.getUseMixedPrecision())
-        computeSystemMultipoleMoments<float, mm_float4, mm_double4>(context, outputMultipoleMoments);
-    else
-        computeSystemMultipoleMoments<float, mm_float4, mm_float4>(context, outputMultipoleMoments);
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double: {
+      computeSystemMultipoleMoments<double, mm_double4, mm_double4>(context, outputMultipoleMoments);
+      break;
+    }
+    case PrecisionLevel::Mixed:
+      {
+	computeSystemMultipoleMoments<float, mm_float4, mm_double4>(context, outputMultipoleMoments);
+	break;
+      }
+    case PrecisionLevel::Single:{
+      computeSystemMultipoleMoments<float, mm_float4, mm_float4>(context, outputMultipoleMoments);
+      break;
+    }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
+    }
 }
 
 void CommonCalcAmoebaMultipoleForceKernel::copyParametersToContext(ContextImpl& context, const AmoebaMultipoleForce& force) {
@@ -1665,10 +1762,20 @@ void CommonCalcAmoebaMultipoleForceKernel::copyParametersToContext(ContextImpl& 
         int axisType, atomX, atomY, atomZ;
         vector<double> dipole, quadrupole;
         force.getMultipoleParameters(i, charge, dipole, quadrupole, axisType, atomZ, atomX, atomY, thole, damping, polarity);
-        if (cc.getUseDoublePrecision())
-            posqd[i].w = charge;
-        else
-            posqf[i].w = (float) charge;
+      
+	switch(cc.getPrecision()){
+	case PrecisionLevel::Double: {
+          posqd[i].w = charge;
+	  break;
+	}
+	case PrecisionLevel::Mixed:
+	case PrecisionLevel::Single:{
+          posqf[i].w = (float) charge;  break;
+	}
+	case PrecisionLevel::F16:{
+	  assert(false && "TODO");
+	}
+	}
         dampingAndTholeVec.push_back(mm_float2((float) damping, (float) thole));
         polarizabilityVec.push_back((float) polarity);
         multipoleParticlesVec.push_back(mm_int4(atomX, atomY, atomZ, axisType));
@@ -1746,7 +1853,7 @@ void CommonCalcAmoebaGeneralizedKirkwoodForceKernel::initialize(const System& sy
         throw OpenMMException("AmoebaGeneralizedKirkwoodForce requires the System to also contain an AmoebaMultipoleForce");
     NonbondedUtilities& nb = cc.getNonbondedUtilities();
     int paddedNumAtoms = cc.getPaddedNumAtoms();
-    int elementSize = (cc.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
+    int elementSize = cc.getNonMixedElementSize();
     params.initialize<mm_float2>(cc, paddedNumAtoms, "amoebaGkParams");
     bornRadii.initialize(cc, paddedNumAtoms, elementSize, "bornRadii");
     field.initialize(cc, 3*paddedNumAtoms, sizeof(long long), "gkField");
@@ -2014,7 +2121,7 @@ void CommonCalcAmoebaVdwForceKernel::initialize(const System& system, const Amoe
     int paddedNumAtoms = cc.getPaddedNumAtoms();
     bondReductionAtoms.initialize<int>(cc, paddedNumAtoms, "bondReductionAtoms");
     bondReductionFactors.initialize<float>(cc, paddedNumAtoms, "bondReductionFactors");
-    tempPosq.initialize(cc, paddedNumAtoms, cc.getUseDoublePrecision() ? sizeof(mm_double4) : sizeof(mm_float4), "tempPosq");
+    tempPosq.initialize(cc, paddedNumAtoms, cc.getNonMixedElementSize(), "tempPosq");
     tempForces.initialize<long long>(cc, 3*paddedNumAtoms, "tempForces");
     
     // Record atom parameters.
@@ -2419,7 +2526,7 @@ void CommonCalcHippoNonbondedForceKernel::initialize(const System& system, const
         for (int j = 0; j < 5; j++)
             localQuadrupolesVec.push_back(0);
     }
-    int elementSize = (cc.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
+    int elementSize = cc.getNonMixedElementSize();
     coreCharge.initialize(cc, paddedNumAtoms, elementSize, "coreCharge");
     valenceCharge.initialize(cc, paddedNumAtoms, elementSize, "valenceCharge");
     alpha.initialize(cc, paddedNumAtoms, elementSize, "alpha");
@@ -2898,25 +3005,34 @@ void CommonCalcHippoNonbondedForceKernel::initialize(const System& system, const
                 }
                 moduli[i-1] = moduli[i-1]*zeta*zeta;
             }
-            if (cc.getUseDoublePrecision()) {
-                if (dim == 0)
-                    pmeBsplineModuliX.upload(moduli);
-                else if (dim == 1)
-                    pmeBsplineModuliY.upload(moduli);
-                else
-                    pmeBsplineModuliZ.upload(moduli);
-            }
-            else {
-                vector<float> modulif(ndata);
-                for (int i = 0; i < ndata; i++)
-                    modulif[i] = (float) moduli[i];
-                if (dim == 0)
-                    pmeBsplineModuliX.upload(modulif);
-                else if (dim == 1)
-                    pmeBsplineModuliY.upload(modulif);
-                else
-                    pmeBsplineModuliZ.upload(modulif);
-            }
+	    switch(cc.getPrecision()){
+	    case PrecisionLevel::Double: {
+              if (dim == 0)
+                pmeBsplineModuliX.upload(moduli);
+              else if (dim == 1)
+                pmeBsplineModuliY.upload(moduli);
+              else
+                pmeBsplineModuliZ.upload(moduli);
+	      break;
+	    }
+	    case PrecisionLevel::Mixed:
+	    case PrecisionLevel::Single:{
+              vector<float> modulif(ndata);
+              for (int i = 0; i < ndata; i++)
+                modulif[i] = (float) moduli[i];
+              if (dim == 0)
+                pmeBsplineModuliX.upload(modulif);
+              else if (dim == 1)
+                pmeBsplineModuliY.upload(modulif);
+              else
+                pmeBsplineModuliZ.upload(modulif);
+	      break;
+	    }
+	    case PrecisionLevel::F16:{
+	      assert(false && "TODO");
+	    }
+	    }
+
         }
 
         // Initialize the b-spline moduli for dispersion PME.
@@ -3193,60 +3309,68 @@ double CommonCalcHippoNonbondedForceKernel::execute(ContextImpl& context, bool i
         recipBoxVectors[0] = mm_double4(b[1]*c[2]*scale, 0, 0, 0);
         recipBoxVectors[1] = mm_double4(-b[0]*c[2]*scale, a[0]*c[2]*scale, 0, 0);
         recipBoxVectors[2] = mm_double4((b[0]*c[1]-b[1]*c[0])*scale, -a[0]*c[1]*scale, a[0]*b[1]*scale, 0);
-        if (cc.getUseDoublePrecision()) {
-            mm_double4 boxVectors[] = {mm_double4(a[0], a[1], a[2], 0), mm_double4(b[0], b[1], b[2], 0), mm_double4(c[0], c[1], c[2], 0)};
-            pmeConvolutionKernel->setArg(4, mm_double4(a[0], b[1], c[2], 0));
-            for (int i = 0; i < 3; i++) {
-                pmeTransformMultipolesKernel->setArg(8+i, recipBoxVectors[i]);
-                pmeTransformPotentialKernel->setArg(2+i, recipBoxVectors[i]);
-                pmeSpreadFixedMultipolesKernel->setArg(6+i, boxVectors[i]);
-                pmeSpreadFixedMultipolesKernel->setArg(9+i, recipBoxVectors[i]);
-                pmeSpreadInducedDipolesKernel->setArg(3+i, boxVectors[i]);
-                pmeSpreadInducedDipolesKernel->setArg(6+i, recipBoxVectors[i]);
-                pmeConvolutionKernel->setArg(5+i, recipBoxVectors[i]);
-                pmeFixedPotentialKernel->setArg(5+i, boxVectors[i]);
-                pmeFixedPotentialKernel->setArg(8+i, recipBoxVectors[i]);
-                pmeInducedPotentialKernel->setArg(5+i, boxVectors[i]);
-                pmeInducedPotentialKernel->setArg(8+i, recipBoxVectors[i]);
-                pmeFixedForceKernel->setArg(16+i, recipBoxVectors[i]);
-                pmeInducedForceKernel->setArg(20+i, recipBoxVectors[i]);
-                pmeRecordInducedFieldDipolesKernel->setArg(3+i, recipBoxVectors[i]);
-                dpmeGridIndexKernel->setArg(7+i, recipBoxVectors[i]);
-                dpmeSpreadChargeKernel->setArg(7+i, recipBoxVectors[i]);
-                dpmeConvolutionKernel->setArg(4+i, recipBoxVectors[i]);
-                dpmeEvalEnergyKernel->setArg(5+i, recipBoxVectors[i]);
-                dpmeInterpolateForceKernel->setArg(8+i, recipBoxVectors[i]);
-            }
-        }
-        else {
-            mm_float4 boxVectors[] = {mm_float4(a[0], a[1], a[2], 0), mm_float4(b[0], b[1], b[2], 0), mm_float4(c[0], c[1], c[2], 0)};
-            pmeConvolutionKernel->setArg(4, mm_float4(a[0], b[1], c[2], 0));
-            mm_float4 recipBoxVectorsFloat[3];
-            recipBoxVectorsFloat[0] = mm_float4((float) recipBoxVectors[0].x, 0, 0, 0);
-            recipBoxVectorsFloat[1] = mm_float4((float) recipBoxVectors[1].x, (float) recipBoxVectors[1].y, 0, 0);
-            recipBoxVectorsFloat[2] = mm_float4((float) recipBoxVectors[2].x, (float) recipBoxVectors[2].y, (float) recipBoxVectors[2].z, 0);
-            for (int i = 0; i < 3; i++) {
-                pmeTransformMultipolesKernel->setArg(8+i, recipBoxVectorsFloat[i]);
-                pmeTransformPotentialKernel->setArg(2+i, recipBoxVectorsFloat[i]);
-                pmeSpreadFixedMultipolesKernel->setArg(6+i, boxVectors[i]);
-                pmeSpreadFixedMultipolesKernel->setArg(9+i, recipBoxVectorsFloat[i]);
-                pmeSpreadInducedDipolesKernel->setArg(3+i, boxVectors[i]);
-                pmeSpreadInducedDipolesKernel->setArg(6+i, recipBoxVectorsFloat[i]);
-                pmeConvolutionKernel->setArg(5+i, recipBoxVectorsFloat[i]);
-                pmeFixedPotentialKernel->setArg(5+i, boxVectors[i]);
-                pmeFixedPotentialKernel->setArg(8+i, recipBoxVectorsFloat[i]);
-                pmeInducedPotentialKernel->setArg(5+i, boxVectors[i]);
-                pmeInducedPotentialKernel->setArg(8+i, recipBoxVectorsFloat[i]);
-                pmeFixedForceKernel->setArg(16+i, recipBoxVectorsFloat[i]);
-                pmeInducedForceKernel->setArg(20+i, recipBoxVectorsFloat[i]);
-                pmeRecordInducedFieldDipolesKernel->setArg(3+i, recipBoxVectorsFloat[i]);
-                dpmeGridIndexKernel->setArg(7+i, recipBoxVectorsFloat[i]);
-                dpmeSpreadChargeKernel->setArg(7+i, recipBoxVectorsFloat[i]);
-                dpmeConvolutionKernel->setArg(4+i, recipBoxVectorsFloat[i]);
-                dpmeEvalEnergyKernel->setArg(5+i, recipBoxVectorsFloat[i]);
-                dpmeInterpolateForceKernel->setArg(8+i, recipBoxVectorsFloat[i]);
-            }
-        }
+	switch(cc.getPrecision()){
+	case PrecisionLevel::Double: {
+          mm_double4 boxVectors[] = {mm_double4(a[0], a[1], a[2], 0), mm_double4(b[0], b[1], b[2], 0), mm_double4(c[0], c[1], c[2], 0)};
+          pmeConvolutionKernel->setArg(4, mm_double4(a[0], b[1], c[2], 0));
+          for (int i = 0; i < 3; i++) {
+            pmeTransformMultipolesKernel->setArg(8+i, recipBoxVectors[i]);
+            pmeTransformPotentialKernel->setArg(2+i, recipBoxVectors[i]);
+            pmeSpreadFixedMultipolesKernel->setArg(6+i, boxVectors[i]);
+            pmeSpreadFixedMultipolesKernel->setArg(9+i, recipBoxVectors[i]);
+            pmeSpreadInducedDipolesKernel->setArg(3+i, boxVectors[i]);
+            pmeSpreadInducedDipolesKernel->setArg(6+i, recipBoxVectors[i]);
+            pmeConvolutionKernel->setArg(5+i, recipBoxVectors[i]);
+            pmeFixedPotentialKernel->setArg(5+i, boxVectors[i]);
+            pmeFixedPotentialKernel->setArg(8+i, recipBoxVectors[i]);
+            pmeInducedPotentialKernel->setArg(5+i, boxVectors[i]);
+            pmeInducedPotentialKernel->setArg(8+i, recipBoxVectors[i]);
+            pmeFixedForceKernel->setArg(16+i, recipBoxVectors[i]);
+            pmeInducedForceKernel->setArg(20+i, recipBoxVectors[i]);
+            pmeRecordInducedFieldDipolesKernel->setArg(3+i, recipBoxVectors[i]);
+            dpmeGridIndexKernel->setArg(7+i, recipBoxVectors[i]);
+            dpmeSpreadChargeKernel->setArg(7+i, recipBoxVectors[i]);
+            dpmeConvolutionKernel->setArg(4+i, recipBoxVectors[i]);
+            dpmeEvalEnergyKernel->setArg(5+i, recipBoxVectors[i]);
+            dpmeInterpolateForceKernel->setArg(8+i, recipBoxVectors[i]);
+          }
+	  break;
+	}
+	case PrecisionLevel::Mixed:
+	case PrecisionLevel::Single:{
+          mm_float4 boxVectors[] = {mm_float4(a[0], a[1], a[2], 0), mm_float4(b[0], b[1], b[2], 0), mm_float4(c[0], c[1], c[2], 0)};
+          pmeConvolutionKernel->setArg(4, mm_float4(a[0], b[1], c[2], 0));
+          mm_float4 recipBoxVectorsFloat[3];
+          recipBoxVectorsFloat[0] = mm_float4((float) recipBoxVectors[0].x, 0, 0, 0);
+          recipBoxVectorsFloat[1] = mm_float4((float) recipBoxVectors[1].x, (float) recipBoxVectors[1].y, 0, 0);
+          recipBoxVectorsFloat[2] = mm_float4((float) recipBoxVectors[2].x, (float) recipBoxVectors[2].y, (float) recipBoxVectors[2].z, 0);
+          for (int i = 0; i < 3; i++) {
+            pmeTransformMultipolesKernel->setArg(8+i, recipBoxVectorsFloat[i]);
+            pmeTransformPotentialKernel->setArg(2+i, recipBoxVectorsFloat[i]);
+            pmeSpreadFixedMultipolesKernel->setArg(6+i, boxVectors[i]);
+            pmeSpreadFixedMultipolesKernel->setArg(9+i, recipBoxVectorsFloat[i]);
+            pmeSpreadInducedDipolesKernel->setArg(3+i, boxVectors[i]);
+            pmeSpreadInducedDipolesKernel->setArg(6+i, recipBoxVectorsFloat[i]);
+            pmeConvolutionKernel->setArg(5+i, recipBoxVectorsFloat[i]);
+            pmeFixedPotentialKernel->setArg(5+i, boxVectors[i]);
+            pmeFixedPotentialKernel->setArg(8+i, recipBoxVectorsFloat[i]);
+            pmeInducedPotentialKernel->setArg(5+i, boxVectors[i]);
+            pmeInducedPotentialKernel->setArg(8+i, recipBoxVectorsFloat[i]);
+            pmeFixedForceKernel->setArg(16+i, recipBoxVectorsFloat[i]);
+            pmeInducedForceKernel->setArg(20+i, recipBoxVectorsFloat[i]);
+            pmeRecordInducedFieldDipolesKernel->setArg(3+i, recipBoxVectorsFloat[i]);
+            dpmeGridIndexKernel->setArg(7+i, recipBoxVectorsFloat[i]);
+            dpmeSpreadChargeKernel->setArg(7+i, recipBoxVectorsFloat[i]);
+            dpmeConvolutionKernel->setArg(4+i, recipBoxVectorsFloat[i]);
+            dpmeEvalEnergyKernel->setArg(5+i, recipBoxVectorsFloat[i]);
+            dpmeInterpolateForceKernel->setArg(8+i, recipBoxVectorsFloat[i]);
+          }
+	  break;
+	}
+	case PrecisionLevel::F16:{
+	  assert(false && "TODO");
+	}
+	}
 
         // Reciprocal space calculation for electrostatics.
         
@@ -3379,66 +3503,90 @@ void CommonCalcHippoNonbondedForceKernel::getInducedDipoles(ContextImpl& context
     int numParticles = cc.getNumAtoms();
     dipoles.resize(numParticles);
     const vector<int>& order = cc.getAtomIndex();
-    if (cc.getUseDoublePrecision()) {
-        vector<double> d;
-        inducedDipole.download(d);
-        for (int i = 0; i < numParticles; i++)
-            dipoles[order[i]] = Vec3(d[3*i], d[3*i+1], d[3*i+2]);
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double: {
+      vector<double> d;
+      inducedDipole.download(d);
+      for (int i = 0; i < numParticles; i++)
+        dipoles[order[i]] = Vec3(d[3*i], d[3*i+1], d[3*i+2]);
+      break;
     }
-    else {
-        vector<float> d;
-        inducedDipole.download(d);
-        for (int i = 0; i < numParticles; i++)
-            dipoles[order[i]] = Vec3(d[3*i], d[3*i+1], d[3*i+2]);
+    case PrecisionLevel::Mixed:
+    case PrecisionLevel::Single:{
+      vector<float> d;
+      inducedDipole.download(d);
+      for (int i = 0; i < numParticles; i++)
+        dipoles[order[i]] = Vec3(d[3*i], d[3*i+1], d[3*i+2]);
+      break;
+    }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
     }
 }
 
 void CommonCalcHippoNonbondedForceKernel::ensureMultipolesValid(ContextImpl& context) {
-    if (multipolesAreValid) {
-        int numParticles = cc.getNumAtoms();
-        if (cc.getUseDoublePrecision()) {
-            vector<mm_double4> pos1, pos2;
-            cc.getPosq().download(pos1);
-            lastPositions.download(pos2);
-            for (int i = 0; i < numParticles; i++)
-                if (pos1[i].x != pos2[i].x || pos1[i].y != pos2[i].y || pos1[i].z != pos2[i].z) {
-                    multipolesAreValid = false;
-                    break;
-                }
+  if (multipolesAreValid) {
+    int numParticles = cc.getNumAtoms();
+    switch(cc.getPrecision()){
+    case PrecisionLevel::Double: {
+      vector<mm_double4> pos1, pos2;
+      cc.getPosq().download(pos1);
+      lastPositions.download(pos2);
+      for (int i = 0; i < numParticles; i++)
+        if (pos1[i].x != pos2[i].x || pos1[i].y != pos2[i].y || pos1[i].z != pos2[i].z) {
+          multipolesAreValid = false;
+          break;
         }
-        else {
-            vector<mm_float4> pos1, pos2;
-            cc.getPosq().download(pos1);
-            lastPositions.download(pos2);
-            for (int i = 0; i < numParticles; i++)
-                if (pos1[i].x != pos2[i].x || pos1[i].y != pos2[i].y || pos1[i].z != pos2[i].z) {
-                    multipolesAreValid = false;
-                    break;
-                }
+      break;
+    }
+    case PrecisionLevel::Mixed:
+    case PrecisionLevel::Single:{
+      vector<mm_float4> pos1, pos2;
+      cc.getPosq().download(pos1);
+      lastPositions.download(pos2);
+      for (int i = 0; i < numParticles; i++)
+        if (pos1[i].x != pos2[i].x || pos1[i].y != pos2[i].y || pos1[i].z != pos2[i].z) {
+          multipolesAreValid = false;
+          break;
         }
+      break;
+    }
+    case PrecisionLevel::F16:{
+      assert(false && "TODO");
+    }
+    }
     }
     if (!multipolesAreValid)
         context.calcForcesAndEnergy(false, false, context.getIntegrator().getIntegrationForceGroups());
 }
 
 void CommonCalcHippoNonbondedForceKernel::getLabFramePermanentDipoles(ContextImpl& context, vector<Vec3>& dipoles) {
-    ContextSelector selector(cc);
-    ensureMultipolesValid(context);
-    int numParticles = cc.getNumAtoms();
-    dipoles.resize(numParticles);
-    const vector<int>& order = cc.getAtomIndex();
-    if (cc.getUseDoublePrecision()) {
-        vector<double> labDipoleVec;
-        labDipoles.download(labDipoleVec);
-        for (int i = 0; i < numParticles; i++)
-            dipoles[order[i]] = Vec3(labDipoleVec[3*i], labDipoleVec[3*i+1], labDipoleVec[3*i+2]);
-    }
-    else {
-        vector<float> labDipoleVec;
-        labDipoles.download(labDipoleVec);
-        for (int i = 0; i < numParticles; i++)
-            dipoles[order[i]] = Vec3(labDipoleVec[3*i], labDipoleVec[3*i+1], labDipoleVec[3*i+2]);
-    }
+  ContextSelector selector(cc);
+  ensureMultipolesValid(context);
+  int numParticles = cc.getNumAtoms();
+  dipoles.resize(numParticles);
+  const vector<int>& order = cc.getAtomIndex();
+  switch(cc.getPrecision()){
+  case PrecisionLevel::Double: {
+    vector<double> labDipoleVec;
+    labDipoles.download(labDipoleVec);
+    for (int i = 0; i < numParticles; i++)
+      dipoles[order[i]] = Vec3(labDipoleVec[3*i], labDipoleVec[3*i+1], labDipoleVec[3*i+2]);
+    break;
+  }
+  case PrecisionLevel::Mixed:
+  case PrecisionLevel::Single:{
+    vector<float> labDipoleVec;
+    labDipoles.download(labDipoleVec);
+    for (int i = 0; i < numParticles; i++)
+      dipoles[order[i]] = Vec3(labDipoleVec[3*i], labDipoleVec[3*i+1], labDipoleVec[3*i+2]);
+    break;
+  }
+  case PrecisionLevel::F16:{
+    assert(false && "TODO");
+  }
+  }
 }
 
 void CommonCalcHippoNonbondedForceKernel::copyParametersToContext(ContextImpl& context, const HippoNonbondedForce& force) {

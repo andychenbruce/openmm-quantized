@@ -24,6 +24,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.      *
  * -------------------------------------------------------------------------- */
 
+#include "openmm/common/ComputeContext.h"
 #ifdef WIN32
   #define _USE_MATH_DEFINES // Needed to get M_PI
 #endif
@@ -854,14 +855,25 @@ double OpenCLContext::reduceEnergy() {
     executeKernel(reduceEnergyKernel, workGroupSize*energySum.getSize(), workGroupSize);
     energySum.download(pinnedMemory);
     double result = 0;
-    if (getUseDoublePrecision() || getUseMixedPrecision()) {
-        for (int i = 0; i < energySum.getSize(); i++)
-            result += ((double*) pinnedMemory)[i];
-    }
-    else {
-        for (int i = 0; i < energySum.getSize(); i++)
+    switch(getPrecision()){
+    case PrecisionLevel::Double:
+    case PrecisionLevel::Mixed:
+      {
+	for (int i = 0; i < energySum.getSize(); i++)
+          result += ((double*) pinnedMemory)[i];
+	break;
+      }
+    case PrecisionLevel::Single:
+      {
+	    for (int i = 0; i < energySum.getSize(); i++)
             result += ((float*) pinnedMemory)[i];
+
+	    break;
+      }
+    case PrecisionLevel::F16:
+      assert(false && "TODO");
     }
+    
     return result;
 }
 

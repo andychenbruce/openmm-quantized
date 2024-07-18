@@ -80,35 +80,92 @@ void CudaIntegrationUtilities::applyConstraintsImpl(bool constrainVelocities, do
         ccmaForceKernel = ccmaPosForceKernel;
     }
     if (settleAtoms.isInitialized()) {
-        if (context.getUseDoublePrecision() || context.getUseMixedPrecision())
-            settleKernel->setArg(1, tol);
-        else
-            settleKernel->setArg(1, (float) tol);
-        settleKernel->execute(settleAtoms.getSize());
+      switch (context.getPrecision()){
+      case PrecisionLevel::Double :
+      case PrecisionLevel::Mixed :
+	{
+	  settleKernel->setArg(1, tol);
+	  break;
+	}
+      case PrecisionLevel::Single :
+	{
+	  settleKernel->setArg(1, (float) tol);
+	  break;
+	}
+      case PrecisionLevel::F16 :
+	{
+	  settleKernel->setArg(1, (half) tol);
+	  break;
+	}
+      }
+      settleKernel->execute(settleAtoms.getSize());
     }
     if (shakeAtoms.isInitialized()) {
-        if (context.getUseDoublePrecision() || context.getUseMixedPrecision())
-            shakeKernel->setArg(1, tol);
-        else
-            shakeKernel->setArg(1, (float) tol);
-        shakeKernel->execute(shakeAtoms.getSize());
+      switch (context.getPrecision()){
+      case PrecisionLevel::Double :
+      case PrecisionLevel::Mixed :
+	{
+	  shakeKernel->setArg(1, tol);
+	  break;
+	}
+      case PrecisionLevel::Single :
+	{
+	  shakeKernel->setArg(1, (float) tol);
+	  break;
+	}
+      case PrecisionLevel::F16 :
+	{
+	  shakeKernel->setArg(1, (half) tol);
+	  break;
+	}
+      }
+      shakeKernel->execute(shakeAtoms.getSize());
     }
     if (ccmaConstraintAtoms.isInitialized()) {
         if (ccmaConstraintAtoms.getSize() <= 1024) {
             // Use the version of CCMA that runs in a single kernel with one workgroup.
             ccmaFullKernel->setArg(0, (int) constrainVelocities);
-            if (context.getUseDoublePrecision() || context.getUseMixedPrecision())
-                ccmaFullKernel->setArg(14, tol);
-            else
-                ccmaFullKernel->setArg(14, (float) tol);
+
+	    switch (context.getPrecision()){
+	    case PrecisionLevel::Double :
+	    case PrecisionLevel::Mixed :
+	      {
+		ccmaFullKernel->setArg(14, tol);
+		break;
+	      }
+	    case PrecisionLevel::Single :
+	      {
+		ccmaFullKernel->setArg(14, (float) tol);
+		break;
+	      }
+	    case PrecisionLevel::F16 :
+	      {
+		ccmaFullKernel->setArg(14, (half) tol);
+		break;
+	      }
+	    }
             ccmaFullKernel->execute(128, 128);
         }
         else {
             ccmaForceKernel->setArg(6, ccmaConvergedDeviceMemory);
-            if (context.getUseDoublePrecision() || context.getUseMixedPrecision())
-                ccmaForceKernel->setArg(7, tol);
-            else
-                ccmaForceKernel->setArg(7, (float) tol);
+            switch (context.getPrecision()){
+	    case PrecisionLevel::Double :
+	    case PrecisionLevel::Mixed :
+	      {
+		ccmaForceKernel->setArg(7, tol);
+		break;
+	      }
+	    case PrecisionLevel::Single :
+	      {
+		ccmaForceKernel->setArg(7, (float) tol);
+		break;
+	      }
+	    case PrecisionLevel::F16 :
+	      {
+		ccmaForceKernel->setArg(7, (half) tol);
+		break;
+	      }
+	    }
             ccmaDirectionsKernel->execute(ccmaConstraintAtoms.getSize());
             const int checkInterval = 4;
             ccmaConvergedMemory[0] = 0;

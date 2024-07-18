@@ -1079,7 +1079,7 @@ Lepton::CustomFunction* ExpressionUtilities::getPeriodicDistancePlaceholder() {
 }
 
 void ExpressionUtilities::callFunction(stringstream& out, string singleFn, string doubleFn, const string& arg, const string& tempType) {
-    bool isDouble = (context.getUseDoublePrecision() || tempType[0] == 'd');
+    bool isDouble = ((context.getPrecision() == PrecisionLevel::Double) || tempType[0] == 'd');
     bool isVector = (tempType[tempType.size()-1] == '3');
     string fn = (isDouble ? doubleFn : singleFn);
     if (isVector)
@@ -1089,7 +1089,7 @@ void ExpressionUtilities::callFunction(stringstream& out, string singleFn, strin
 }
 
 void ExpressionUtilities::callFunction2(stringstream& out, string singleFn, string doubleFn, const string& arg1, const string& arg2, const string& tempType) {
-    bool isDouble = (context.getUseDoublePrecision() || tempType[0] == 'd');
+    bool isDouble = ((context.getPrecision() == PrecisionLevel::Double) || tempType[0] == 'd');
     bool isVector = (tempType[tempType.size()-1] == '3');
     string fn = (isDouble ? doubleFn : singleFn);
     if (isVector) {
