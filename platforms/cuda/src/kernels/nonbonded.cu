@@ -264,10 +264,6 @@ extern "C" __global__ void computeNonbonded(
 #ifdef INCLUDE_FORCES
         
         const unsigned int offset = x*TILE_SIZE + tgx;
-	printf("force = %f, %f, %f\n", (double)force.x, (double)force.y, (double)force.z);
-	//printf("x as fixed points before cast is %f\n", (double)((double)force.x * (double)((long long)0x100000000)));
-        printf("SECOND adding offset %d to %llu\n", offset, static_cast<unsigned long long>(realToFixedPoint(force.x)));
-
 	atomicAdd(&forceBuffers[offset], static_cast<unsigned long long>(realToFixedPoint(force.x)));
         atomicAdd(&forceBuffers[offset+PADDED_NUM_ATOMS], static_cast<unsigned long long>(realToFixedPoint(force.y)));
         atomicAdd(&forceBuffers[offset+2*PADDED_NUM_ATOMS], static_cast<unsigned long long>(realToFixedPoint(force.z)));

@@ -5735,7 +5735,6 @@ void CommonIntegrateVerletStepKernel::initialize(const System& system, const Ver
 }
 
 void CommonIntegrateVerletStepKernel::execute(ContextImpl& context, const VerletIntegrator& integrator) {
-    printf("called verlet step kernel execute\n");
     ContextSelector selector(cc);
     IntegrationUtilities& integration = cc.getIntegrationUtilities();
     int numAtoms = cc.getNumAtoms();
