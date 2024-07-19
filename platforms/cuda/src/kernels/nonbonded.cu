@@ -253,6 +253,7 @@ extern "C" __global__ void computeNonbonded(
             }
             const unsigned int offset = y*TILE_SIZE + tgx;
             // write results for off diagonal tiles
+	    printf("adding offset %d to %ulld\n", offset, static_cast<unsigned long long>(realToFixedPoint(shflForce.x)));
 #ifdef INCLUDE_FORCES
             atomicAdd(&forceBuffers[offset], static_cast<unsigned long long>(realToFixedPoint(shflForce.x)));
             atomicAdd(&forceBuffers[offset+PADDED_NUM_ATOMS], static_cast<unsigned long long>(realToFixedPoint(shflForce.y)));
@@ -261,8 +262,13 @@ extern "C" __global__ void computeNonbonded(
         }
         // Write results for on and off diagonal tiles
 #ifdef INCLUDE_FORCES
+        
         const unsigned int offset = x*TILE_SIZE + tgx;
-        atomicAdd(&forceBuffers[offset], static_cast<unsigned long long>(realToFixedPoint(force.x)));
+	printf("force = %f, %f, %f\n", (double)force.x, (double)force.y, (double)force.z);
+	//printf("x as fixed points before cast is %f\n", (double)((double)force.x * (double)((long long)0x100000000)));
+        printf("SECOND adding offset %d to %llu\n", offset, static_cast<unsigned long long>(realToFixedPoint(force.x)));
+
+	atomicAdd(&forceBuffers[offset], static_cast<unsigned long long>(realToFixedPoint(force.x)));
         atomicAdd(&forceBuffers[offset+PADDED_NUM_ATOMS], static_cast<unsigned long long>(realToFixedPoint(force.y)));
         atomicAdd(&forceBuffers[offset+2*PADDED_NUM_ATOMS], static_cast<unsigned long long>(realToFixedPoint(force.z)));
 #endif

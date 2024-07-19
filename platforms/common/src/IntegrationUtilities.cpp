@@ -93,7 +93,6 @@ struct IntegrationUtilities::ConstraintOrderer {
 IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System& system) : context(context),
         randomPos(0), hasOverlappingVsites(false) {
     // Create workspace arrays.
-
     lastStepSize = mm_double2(0.0, 0.0);
     switch(context.getPrecision()){
     case PrecisionLevel::Double:
@@ -122,8 +121,8 @@ IntegrationUtilities::IntegrationUtilities(ComputeContext& context, const System
         vector<mm_half4> deltas(posDelta.getSize(), mm_half4(0.0f, 0.0f, 0.0f, 0.0f));
         posDelta.upload(deltas);
         stepSize.initialize<mm_float2>(context, 1, "stepSize");
-        mm_half2 lastStepSizeFloat = mm_half2(0.0f, 0.0f);
-        stepSize.upload(&lastStepSizeFloat);
+        mm_half2 lastStepSizeHalf = mm_half2(0.0f, 0.0f);
+        stepSize.upload(&lastStepSizeHalf);
 	break;
       }
     }
@@ -776,7 +775,8 @@ void IntegrationUtilities::setNextStepSize(double size) {
       }
     case PrecisionLevel::F16:
       {
-	assert(false && "TODO");
+	mm_half2 lastStepSizeHalf = mm_half2((half) size, (half) size);
+        stepSize.upload(&lastStepSizeHalf);
 	break;
       }
     }
@@ -800,7 +800,9 @@ double IntegrationUtilities::getLastStepSize() {
      }
     case PrecisionLevel::F16:
       {
-	assert(false && "TODO");
+        mm_half2 lastStepSizeHalf;
+        stepSize.download(&lastStepSizeHalf);
+        lastStepSize = mm_double2(lastStepSizeHalf.x, lastStepSizeHalf.y);
 	break;
       }
     }

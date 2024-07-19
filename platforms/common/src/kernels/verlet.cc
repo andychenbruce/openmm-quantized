@@ -7,9 +7,9 @@ KERNEL void integrateVerletPart1(int numAtoms, int paddedNumAtoms, GLOBAL const 
         , GLOBAL const real4* RESTRICT posqCorrection
 #endif
 				 ) {
-  for(int i = GLOBAL_ID; i < numAtoms; i += GLOBAL_SIZE){
-    printf("BEFORE PART1 %d is = %f, %f, %f, %f\n", i, (double)posq[i].x, (double)posq[i].y, (double)posq[i].z, (double)posq[i].w);
-  }
+  // for(int i = GLOBAL_ID; i < numAtoms; i += GLOBAL_SIZE){
+  //   printf("BEFORE PART1 %d is = %f, %f, %f, %f\n", i, (double)posq[i].x, (double)posq[i].y, (double)posq[i].z, (double)posq[i].w);
+  // }
 
   
     const mixed2 stepSize = dt[0];
@@ -18,7 +18,7 @@ KERNEL void integrateVerletPart1(int numAtoms, int paddedNumAtoms, GLOBAL const 
     const mixed scale = dtVel/(mixed) (long long) 0x100000000;
     for (int index = GLOBAL_ID; index < numAtoms; index += GLOBAL_SIZE) {
         mixed4 velocity = velm[index];
-	    printf("velocity before at %f, %f, %f, %f\n",
+	    printf("velm before at %f, %f, %f, %f\n",
 		   (double) velocity.x,
 		   (double) velocity.y,
 		   (double) velocity.z,
@@ -31,11 +31,11 @@ KERNEL void integrateVerletPart1(int numAtoms, int paddedNumAtoms, GLOBAL const 
 #else
             real4 pos = posq[index];
 #endif
-	    printf("force mul is %lld, %lld, %lld\n", force[index], force[index], force[index]);
+	    printf("force mul %d, %d, %d is %lld, %lld, %lld\n", index, index+paddedNumAtoms, index+paddedNumAtoms*2, force[index], force[index+paddedNumAtoms], force[index+paddedNumAtoms*2]);
             velocity.x += scale*(mixed)force[index]*velocity.w;
             velocity.y += scale*(mixed)force[index+paddedNumAtoms]*velocity.w;
             velocity.z += scale*(mixed)force[index+paddedNumAtoms*2]*velocity.w;
-	    printf("velocity after at %f, %f, %f, %f\n",
+	    printf("velm after at %f, %f, %f, %f\n",
 		   (double) velocity.x,
 		   (double) velocity.y,
 		   (double) velocity.z,
@@ -48,9 +48,9 @@ KERNEL void integrateVerletPart1(int numAtoms, int paddedNumAtoms, GLOBAL const 
         }
     }
 
-  for(int i = GLOBAL_ID; i < numAtoms; i += GLOBAL_SIZE){
-    printf("AFTER PART1 %d is = %f, %f, %f, %f\n", i, (double)posq[i].x, (double)posq[i].y, (double)posq[i].z, (double)posq[i].w);
-  }
+  // for(int i = GLOBAL_ID; i < numAtoms; i += GLOBAL_SIZE){
+  //   printf("AFTER PART1 %d is = %f, %f, %f, %f\n", i, (double)posq[i].x, (double)posq[i].y, (double)posq[i].z, (double)posq[i].w);
+  // }
 
 }
 
@@ -64,11 +64,12 @@ KERNEL void integrateVerletPart2(int numAtoms, GLOBAL mixed2* RESTRICT dt, GLOBA
         , GLOBAL real4* RESTRICT posqCorrection
 #endif
 				 ) {
-  for(int i = GLOBAL_ID; i < numAtoms; i += GLOBAL_SIZE){
-    printf("BEFORE PART2 %d is = %f, %f, %f, %f\n", i, (double)posq[i].x, (double)posq[i].y, (double)posq[i].z, (double)posq[i].w);
-  }
+  // for(int i = GLOBAL_ID; i < numAtoms; i += GLOBAL_SIZE){
+  //   printf("BEFORE PART2 %d is = %f, %f, %f, %f\n", i, (double)posq[i].x, (double)posq[i].y, (double)posq[i].z, (double)posq[i].w);
+  // }
   
     mixed2 stepSize = dt[0];
+    //printf("step size = %f, %f\n", (double) stepSize.x, (double) stepSize.y);
 #ifdef SUPPORTS_DOUBLE_PRECISION
     double oneOverDt = 1.0/(double)stepSize.y;
 #else
@@ -81,6 +82,12 @@ KERNEL void integrateVerletPart2(int numAtoms, GLOBAL mixed2* RESTRICT dt, GLOBA
     int index = GLOBAL_ID;
     for (; index < numAtoms; index += GLOBAL_SIZE) {
         mixed4 velocity = velm[index];
+      	printf("PART2 velm before at %f, %f, %f, %f\n",
+	       (double) velocity.x,
+	       (double) velocity.y,
+	       (double) velocity.z,
+	       (double) velocity.w);
+
         if (velocity.w != (mixed)0.0) {
 #ifdef USE_MIXED_PRECISION
             real4 pos1 = posq[index];
@@ -93,6 +100,7 @@ KERNEL void integrateVerletPart2(int numAtoms, GLOBAL mixed2* RESTRICT dt, GLOBA
             pos.x += delta.x;
             pos.y += delta.y;
             pos.z += delta.z;
+	    printf("one over dt = %f\n", (double) oneOverDt);
 	    printf("delta %d = %f, %f, %f, %f\n", index,
 		   (double)delta.x,
 		   (double)delta.y,
@@ -110,13 +118,18 @@ KERNEL void integrateVerletPart2(int numAtoms, GLOBAL mixed2* RESTRICT dt, GLOBA
             posq[index] = pos;
 #endif
             velm[index] = velocity;
+      	    printf("PART2 velm after at %f, %f, %f, %f\n",
+	       (double) velocity.x,
+	       (double) velocity.y,
+	       (double) velocity.z,
+	       (double) velocity.w);
         }
 
     }
 
-    for(int i = GLOBAL_ID; i < numAtoms; i += GLOBAL_SIZE){
-      printf("AFTER PART2 %d is = %f, %f, %f, %f\n", i, (double)posq[i].x, (double)posq[i].y, (double)posq[i].z, (double)posq[i].w);
-    }
+    // for(int i = GLOBAL_ID; i < numAtoms; i += GLOBAL_SIZE){
+    //   printf("AFTER PART2 %d is = %f, %f, %f, %f\n", i, (double)posq[i].x, (double)posq[i].y, (double)posq[i].z, (double)posq[i].w);
+    // }
 }
 
 /**
